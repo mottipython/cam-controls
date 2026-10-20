@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Camera Quick Controls
+Comment=Simple sliders to fix washed out webcam colors and PipeWire glitches
+Exec=cam-controls
+Icon=cam-controls
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Settings;HardwareSettings;
+Keywords=webcam;camera;v4l2;pipewire;logitech;controls;color;
+StartupNotify=true
