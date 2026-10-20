@@ -1,5 +1,5 @@
 Name:           cam-controls
-Version:        1.0.0
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Camera Quick Controls & PipeWire video fix for Linux webcams
 License:        MIT

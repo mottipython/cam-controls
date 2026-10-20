@@ -1,10 +1,13 @@
 [Desktop Entry]
 Name=Camera Quick Controls
-Comment=Simple sliders to fix washed out webcam colors and PipeWire glitches
+GenericName=Camera Settings
+Comment=Webcam image tuning, color controls, and PipeWire fix
 Exec=cam-controls
 Icon=cam-controls
 Terminal=false
 Type=Application
-Categories=AudioVideo;Video;Settings;HardwareSettings;
-Keywords=webcam;camera;v4l2;pipewire;logitech;controls;color;
+Categories=Settings;HardwareSettings;AudioVideo;Video;
+Keywords=camera;webcam;video;v4l2;pipewire;logitech;controls;color;settings;hardware;saturation;contrast;brightness;
 StartupNotify=true
+X-KDE-Keywords=camera;webcam;video;color;settings;controls;v4l2;pipewire;saturation;contrast;brightness;hardware;
+X-GNOME-Settings-Panel=camera

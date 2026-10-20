@@ -2,7 +2,7 @@
 """
 Camera Quick Controls & Linux PipeWire Fix
 Adjusts webcam controls (saturation, contrast, brightness, white balance)
-and provides quick fixes for washed-out colors and PipeWire libcamera video distortion.
+with multi-camera support, PipeWire UVC video fix, and desktop settings integration.
 """
 
 import os
@@ -13,49 +13,61 @@ import struct
 import argparse
 import subprocess
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # V4L2 ioctl codes
+VIDIOC_QUERYCAP  = 0x80685600
 VIDIOC_QUERYCTRL = 0xc0445624
 VIDIOC_G_CTRL    = 0xc008561b
 VIDIOC_S_CTRL    = 0xc008561c
 
-# V4L2 Control IDs
-CTRLS = {
-    "brightness":   {"cid": 0x00980900, "name": "Brightness",          "default_rec": 128},
-    "contrast":     {"cid": 0x00980901, "name": "Contrast",            "default_rec": 42},
-    "saturation":   {"cid": 0x00980902, "name": "Saturation",          "default_rec": 56},
-    "sharpness":    {"cid": 0x0098091b, "name": "Sharpness",           "default_rec": 28},
-    "gain":         {"cid": 0x00980913, "name": "Gain",                "default_rec": 32},
-    "white_balance":{"cid": 0x0098091a, "name": "White Balance Temp",  "default_rec": 4500},
-}
+V4L2_CAP_VIDEO_CAPTURE = 0x00000001
+V4L2_CAP_DEVICE_CAPS   = 0x80000000
 
-def find_camera_device(requested_dev=None):
-    if requested_dev:
-        if os.path.exists(requested_dev):
-            return requested_dev
-        else:
-            sys.stderr.write(f"Error: Specified device {requested_dev} does not exist.\n")
-            sys.exit(1)
+# Priority list for known controls
+PREFERRED_ORDER = [
+    (0x00980902, "Saturation",          56),
+    (0x00980901, "Contrast",            42),
+    (0x00980900, "Brightness",          128),
+    (0x0098091b, "Sharpness",           28),
+    (0x0098091a, "White Balance Temp",  4500),
+    (0x00980913, "Gain",                32),
+    (0x0098091c, "Backlight Compensation", None),
+]
 
-    # 1. Prefer Logitech / known UVC camera index 0 symlinks
-    by_id = sorted(glob.glob('/dev/v4l/by-id/*index0*'))
-    if by_id:
-        return by_id[0]
-
-    # 2. Check standard device nodes
-    for dev in ['/dev/video1', '/dev/video0', '/dev/video2']:
-        if os.path.exists(dev):
-            return dev
-
-    return '/dev/video0'
+def list_capture_cameras():
+    """Discover all real video capture devices and their hardware names."""
+    cameras = []
+    # Sort with /dev/v4l/by-id preference if available
+    devices = sorted(glob.glob('/dev/video*'))
+    
+    for dev in devices:
+        try:
+            fd = os.open(dev, os.O_RDWR)
+            cap = fcntl.ioctl(fd, VIDIOC_QUERYCAP, b'\x00' * 104)
+            driver, card, bus, ver, caps, dev_caps, _, _, _ = struct.unpack('16s32s32sIIIIII', cap)
+            eff_caps = dev_caps if (caps & V4L2_CAP_DEVICE_CAPS) else caps
+            if eff_caps & V4L2_CAP_VIDEO_CAPTURE:
+                name = card.split(b'\x00')[0].decode('latin1', errors='replace').strip()
+                driver_name = driver.split(b'\x00')[0].decode('latin1', errors='replace').strip()
+                cameras.append({
+                    "device": dev,
+                    "name": name or f"Camera ({os.path.basename(dev)})",
+                    "driver": driver_name
+                })
+            os.close(fd)
+        except OSError:
+            pass
+    return cameras
 
 def query_control(fd, cid):
     query = struct.pack('II32siiiiIII', cid, 0, b'', 0, 0, 0, 0, 0, 0, 0)
     try:
         res = fcntl.ioctl(fd, VIDIOC_QUERYCTRL, query)
-        _, _, name, qmin, qmax, qstep, qdef, _, _, _ = struct.unpack('II32siiiiIII', res)
-        name_str = name.split(b'\x00')[0].decode('latin1')
+        _, qtype, name, qmin, qmax, qstep, qdef, qflags, _, _ = struct.unpack('II32siiiiIII', res)
+        if (qflags & 1) or qtype != 1:  # Disabled or not integer
+            return None
+        name_str = name.split(b'\x00')[0].decode('latin1').strip()
         ctrl = struct.pack('Ii', cid, 0)
         res_ctrl = fcntl.ioctl(fd, VIDIOC_G_CTRL, ctrl)
         _, val = struct.unpack('Ii', res_ctrl)
@@ -63,22 +75,46 @@ def query_control(fd, cid):
     except OSError:
         return None
 
+def query_all_controls(fd):
+    """Enumerate all supported controls for the camera."""
+    controls = []
+    seen = set()
+    # 1. Preferred controls first
+    for cid, name, rec in PREFERRED_ORDER:
+        info = query_control(fd, cid)
+        if info:
+            info["cid"] = cid
+            info["recommended"] = rec
+            controls.append(info)
+            seen.add(cid)
+    # 2. Any additional standard controls
+    for cid in range(0x00980900, 0x00980930):
+        if cid in seen:
+            continue
+        info = query_control(fd, cid)
+        if info:
+            info["cid"] = cid
+            info["recommended"] = None
+            controls.append(info)
+            seen.add(cid)
+    return controls
+
 def set_control(fd, cid, val):
     data = struct.pack('Ii', cid, int(val))
     try:
         fcntl.ioctl(fd, VIDIOC_S_CTRL, data)
         return True
-    except OSError as e:
+    except OSError:
         return False
 
 def fix_pipewire():
-    """Install 99-disable-libcamera.conf to fix PipeWire libcamera UVC issues."""
+    """Install 99-disable-libcamera.conf to bypass buggy libcamera UVC handler."""
     conf_dir = os.path.expanduser('~/.config/wireplumber/wireplumber.conf.d')
     os.makedirs(conf_dir, exist_ok=True)
     target = os.path.join(conf_dir, '99-disable-libcamera.conf')
 
     content = """# Generated by Camera Quick Controls
-# Bypasses the experimental libcamera UVC handler which causes garbled/green video
+# Bypasses experimental libcamera UVC handler which causes garbled/green video
 wireplumber.profiles = {
   main = {
     monitor.libcamera = "disabled"
@@ -104,10 +140,8 @@ def print_status(dev_path):
 
     print(f"Camera Device: {dev_path} ({os.path.realpath(dev_path)})")
     print("-" * 65)
-    for key, item in CTRLS.items():
-        info = query_control(fd, item["cid"])
-        if info:
-            print(f"{info['name']:25}: Current={info['current']:<5} (Min={info['min']}, Max={info['max']}, Default={info['default']})")
+    for c in query_all_controls(fd):
+        print(f"{c['name']:25}: Current={c['current']:<5} (Min={c['min']}, Max={c['max']}, Default={c['default']})")
     os.close(fd)
 
 def apply_recommended_cli(dev_path):
@@ -118,11 +152,11 @@ def apply_recommended_cli(dev_path):
         return
 
     print(f"Applying recommended settings to {dev_path}...")
-    for key, item in CTRLS.items():
-        val = item["default_rec"]
-        success = set_control(fd, item["cid"], val)
-        status = "OK" if success else "FAILED"
-        print(f"  {item['name']:20} -> {val:<5} [{status}]")
+    for c in query_all_controls(fd):
+        if c.get("recommended") is not None:
+            val = c["recommended"]
+            set_control(fd, c["cid"], val)
+            print(f"  {c['name']:25} -> {val:<5} [OK]")
     os.close(fd)
     print("Done! Recommended profile applied.")
 
@@ -134,112 +168,175 @@ def reset_defaults_cli(dev_path):
         return
 
     print(f"Resetting {dev_path} to hardware defaults...")
-    for key, item in CTRLS.items():
-        info = query_control(fd, item["cid"])
-        if info:
-            set_control(fd, item["cid"], info["default"])
-            print(f"  {info['name']:20} -> {info['default']:<5} [OK]")
+    for c in query_all_controls(fd):
+        set_control(fd, c["cid"], c["default"])
+        print(f"  {c['name']:25} -> {c['default']:<5} [OK]")
     os.close(fd)
     print("Done! Defaults restored.")
 
-def run_gui(dev_path):
+def run_gui(initial_dev=None):
     try:
         import tkinter as tk
         from tkinter import ttk, messagebox
     except ImportError:
-        sys.stderr.write("Error: python3-tkinter is required to launch the GUI.\n")
-        sys.stderr.write("Install it with: sudo apt install python3-tk  OR  sudo dnf install python3-tkinter\n")
+        sys.stderr.write("Error: python3-tkinter is required for the GUI.\n")
         sys.exit(1)
 
     class CamApp:
         def __init__(self, root):
             self.root = root
-            self.root.title("Camera Quick Controls")
-            self.root.geometry("460x450")
-            self.root.minsize(420, 420)
+            self.root.title("Camera Settings & Quick Controls")
+            self.root.geometry("490x510")
+            self.root.minsize(450, 480)
             
-            try:
-                self.fd = os.open(dev_path, os.O_RDWR)
-            except Exception as e:
-                err_frame = ttk.Frame(root, padding=20)
-                err_frame.pack(fill="both", expand=True)
-                ttk.Label(err_frame, text=f"Could not open camera device:\n{dev_path}", font=("sans-serif", 11, "bold"), foreground="red").pack(pady=10)
-                ttk.Label(err_frame, text=f"Details: {e}", wraplength=380).pack(pady=5)
-                return
-
-            frame = ttk.Frame(root, padding=15)
-            frame.pack(fill="both", expand=True)
-
-            header = ttk.Frame(frame)
-            header.pack(fill="x", pady=(0, 15))
-            
-            real_name = os.path.basename(os.path.realpath(dev_path))
-            ttk.Label(header, text="Webcam Quick Controls", font=("sans-serif", 13, "bold")).pack(anchor="w")
-            ttk.Label(header, text=f"Active device: {dev_path} ({real_name})", foreground="gray").pack(anchor="w")
-
+            self.fd = None
+            self.current_dev = None
             self.slider_vars = {}
-            for key, item in CTRLS.items():
-                cid = item["cid"]
-                info = query_control(self.fd, cid)
-                if not info:
-                    continue
+            self.controls = []
 
-                row = ttk.Frame(frame)
-                row.pack(fill="x", pady=4)
+            self.main_frame = ttk.Frame(root, padding=15)
+            self.main_frame.pack(fill="both", expand=True)
 
-                lbl = ttk.Label(row, text=f"{item['name']}:", width=18, anchor="w")
-                lbl.pack(side="left")
+            # Camera selection dropdown
+            top_bar = ttk.Frame(self.main_frame)
+            top_bar.pack(fill="x", pady=(0, 10))
 
-                val_lbl = ttk.Label(row, text=str(info["current"]), width=6, anchor="e")
-                val_lbl.pack(side="right")
+            ttk.Label(top_bar, text="Camera:", font=("sans-serif", 10, "bold")).pack(side="left", padx=(0, 6))
 
-                scale = ttk.Scale(
-                    row, from_=info["min"], to=info["max"], value=info["current"],
-                    command=lambda val, c=cid, vl=val_lbl: self.on_slider(c, val, vl)
-                )
-                scale.pack(side="left", fill="x", expand=True, padx=8)
-                self.slider_vars[cid] = (scale, val_lbl)
+            self.cam_combo = ttk.Combobox(top_bar, state="readonly")
+            self.cam_combo.pack(side="left", fill="x", expand=True)
+            self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_switch)
 
-            btn_frame = ttk.Frame(frame)
-            btn_frame.pack(fill="x", pady=(20, 0))
+            ttk.Button(top_bar, text="↻", width=3, command=self.reload_cameras).pack(side="right", padx=(6, 0))
+
+            # Sliders Container Frame
+            self.sliders_frame = ttk.Frame(self.main_frame)
+            self.sliders_frame.pack(fill="both", expand=True, pady=5)
+
+            # Buttons
+            btn_frame = ttk.Frame(self.main_frame)
+            btn_frame.pack(fill="x", pady=(15, 0))
 
             ttk.Button(btn_frame, text="Reset to Defaults", command=self.reset_defaults).pack(side="left")
             ttk.Button(btn_frame, text="Apply Recommended", command=self.apply_recommended).pack(side="right")
 
-            fix_frame = ttk.Frame(frame)
-            fix_frame.pack(fill="x", pady=(15, 0))
+            fix_frame = ttk.Frame(self.main_frame)
+            fix_frame.pack(fill="x", pady=(10, 0))
             ttk.Button(fix_frame, text="Fix Garbled/Green Video (PipeWire)", command=self.do_fix_pipewire).pack(fill="x")
+
+            self.reload_cameras(initial_dev)
+
+        def reload_cameras(self, target_dev=None):
+            self.cameras = list_capture_cameras()
+            if not self.cameras:
+                self.show_no_camera_error()
+                return
+
+            labels = [f"{c['name']}  ({c['device']})" for c in self.cameras]
+            self.cam_combo['values'] = labels
+
+            # Pick target, or current, or first
+            idx = 0
+            if target_dev:
+                for i, c in enumerate(self.cameras):
+                    if c["device"] == target_dev or os.path.realpath(c["device"]) == os.path.realpath(target_dev):
+                        idx = i
+                        break
+            elif self.current_dev:
+                for i, c in enumerate(self.cameras):
+                    if c["device"] == self.current_dev:
+                        idx = i
+                        break
+
+            self.cam_combo.current(idx)
+            self.load_camera(self.cameras[idx]["device"])
+
+        def on_camera_switch(self, event=None):
+            idx = self.cam_combo.current()
+            if idx >= 0 and idx < len(self.cameras):
+                self.load_camera(self.cameras[idx]["device"])
+
+        def load_camera(self, dev_path):
+            if self.fd is not None:
+                try:
+                    os.close(self.fd)
+                except OSError:
+                    pass
+                self.fd = None
+
+            self.current_dev = dev_path
+            for widget in self.sliders_frame.winfo_children():
+                widget.destroy()
+
+            try:
+                self.fd = os.open(dev_path, os.O_RDWR)
+            except Exception as e:
+                ttk.Label(self.sliders_frame, text=f"Could not open {dev_path}:\n{e}", foreground="red").pack(pady=20)
+                return
+
+            self.controls = query_all_controls(self.fd)
+            self.slider_vars = {}
+
+            if not self.controls:
+                ttk.Label(self.sliders_frame, text="No adjustable image controls found for this camera.", foreground="gray").pack(pady=20)
+                return
+
+            for c in self.controls:
+                cid = c["cid"]
+                row = ttk.Frame(self.sliders_frame)
+                row.pack(fill="x", pady=4)
+
+                lbl = ttk.Label(row, text=f"{c['name']}:", width=22, anchor="w")
+                lbl.pack(side="left")
+
+                val_lbl = ttk.Label(row, text=str(c["current"]), width=6, anchor="e")
+                val_lbl.pack(side="right")
+
+                scale = ttk.Scale(
+                    row, from_=c["min"], to=c["max"], value=c["current"],
+                    command=lambda val, cid=cid, vl=val_lbl: self.on_slider(cid, val, vl)
+                )
+                scale.pack(side="left", fill="x", expand=True, padx=8)
+                self.slider_vars[cid] = (scale, val_lbl)
 
         def on_slider(self, cid, val, label):
             val_int = int(float(val))
             label.config(text=str(val_int))
-            set_control(self.fd, cid, val_int)
+            if self.fd is not None:
+                set_control(self.fd, cid, val_int)
 
         def apply_recommended(self):
-            for key, item in CTRLS.items():
-                cid = item["cid"]
-                val = item["default_rec"]
-                set_control(self.fd, cid, val)
-                if cid in self.slider_vars:
-                    scale, lbl = self.slider_vars[cid]
-                    scale.set(val)
-                    lbl.config(text=str(val))
-
-        def reset_defaults(self):
-            for key, item in CTRLS.items():
-                cid = item["cid"]
-                info = query_control(self.fd, cid)
-                if info:
-                    set_control(self.fd, cid, info["default"])
+            if self.fd is None:
+                return
+            for c in self.controls:
+                cid = c["cid"]
+                if c.get("recommended") is not None:
+                    val = c["recommended"]
+                    set_control(self.fd, cid, val)
                     if cid in self.slider_vars:
                         scale, lbl = self.slider_vars[cid]
-                        scale.set(info["default"])
-                        lbl.config(text=str(info["default"]))
+                        scale.set(val)
+                        lbl.config(text=str(val))
+
+        def reset_defaults(self):
+            if self.fd is None:
+                return
+            for c in self.controls:
+                cid = c["cid"]
+                set_control(self.fd, cid, c["default"])
+                if cid in self.slider_vars:
+                    scale, lbl = self.slider_vars[cid]
+                    scale.set(c["default"])
+                    lbl.config(text=str(c["default"]))
 
         def do_fix_pipewire(self):
             fix_pipewire()
-            from tkinter import messagebox
             messagebox.showinfo("PipeWire Fix Applied", "WirePlumber configuration has been updated to bypass libcamera.\nPipeWire services restarted!")
+
+        def show_no_camera_error(self):
+            for widget in self.sliders_frame.winfo_children():
+                widget.destroy()
+            ttk.Label(self.sliders_frame, text="No camera capture devices detected.\nPlease check your USB connection.", foreground="red").pack(pady=20)
 
     root = tk.Tk()
     app = CamApp(root)
@@ -247,20 +344,49 @@ def run_gui(dev_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Camera Quick Controls & Linux PipeWire Fix")
-    parser.add_argument("-d", "--device", help="Path to video device (e.g. /dev/video1)")
+    parser.add_argument("-l", "--list-devices", action="store_true", help="List all detected camera devices")
+    parser.add_argument("-d", "--device", help="Path to video device (e.g. /dev/video1) or camera index")
     parser.add_argument("--status", action="store_true", help="Print current camera control values")
-    parser.add_argument("--apply-recommended", action="store_true", help="Apply recommended settings (vivid colors, balanced contrast)")
+    parser.add_argument("--apply-recommended", action="store_true", help="Apply recommended settings")
     parser.add_argument("--reset-defaults", action="store_true", help="Reset controls to hardware defaults")
     parser.add_argument("--fix-pipewire", action="store_true", help="Apply WirePlumber fix to eliminate garbled/green video on PipeWire")
     parser.add_argument("--gui", action="store_true", help="Launch GUI control panel (default if no flags given)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
 
     args = parser.parse_args()
-    dev = find_camera_device(args.device)
 
     if args.fix_pipewire:
         fix_pipewire()
         return
+
+    cams = list_capture_cameras()
+
+    if args.list_devices:
+        if not cams:
+            print("No video capture devices found.")
+            return
+        print(f"Found {len(cams)} video capture camera(s):")
+        for i, c in enumerate(cams):
+            print(f"  [{i}] {c['name']:30} -> {c['device']} ({c['driver']})")
+        return
+
+    # Resolve target device
+    dev = None
+    if args.device:
+        if args.device.isdigit():
+            idx = int(args.device)
+            if 0 <= idx < len(cams):
+                dev = cams[idx]["device"]
+            else:
+                sys.stderr.write(f"Error: Camera index {idx} out of range (found {len(cams)} cameras).\n")
+                sys.exit(1)
+        elif os.path.exists(args.device):
+            dev = args.device
+        else:
+            sys.stderr.write(f"Error: Specified device {args.device} does not exist.\n")
+            sys.exit(1)
+    else:
+        dev = cams[0]["device"] if cams else "/dev/video0"
 
     if args.status:
         print_status(dev)
@@ -274,7 +400,7 @@ def main():
         reset_defaults_cli(dev)
         return
 
-    # Default to GUI if graphical environment is detected
+    # Default to GUI
     if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY") or args.gui:
         run_gui(dev)
     else:
