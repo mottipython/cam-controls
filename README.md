@@ -1,5 +1,9 @@
 # Camera Quick Controls (`cam-controls`)
 
+[![CI Package & Installation Tests](https://github.com/mottipython/cam-controls/actions/workflows/test.yml/badge.svg)](https://github.com/mottipython/cam-controls/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/mottipython/cam-controls)](https://github.com/mottipython/cam-controls/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A lightweight, zero-dependency camera tuning utility and PipeWire fix for Linux webcams (especially **Logitech C310**, **C920**, and standard UVC webcams).
 
 ![Camera Quick Controls](data/icons/hicolor/scalable/apps/cam-controls.svg)
