@@ -36,20 +36,21 @@ Many USB webcams (particularly the Logitech C310) ship with factory defaults tha
 
 ## Installation
 
-### Debian / Ubuntu / Pop!_OS / Linux Mint (`.deb`)
-
-Download the latest `.deb` from the [GitHub Releases](https://github.com/mottipython/cam-controls/releases) page and install:
-
-```bash
-sudo dpkg -i cam-controls_1.0.0_all.deb || sudo apt-get install -f -y
-```
-
 ### Fedora / Nobara / RHEL / openSUSE (`.rpm`)
 
-Download the latest `.rpm` from the [GitHub Releases](https://github.com/mottipython/cam-controls/releases) page and install:
+Install directly from terminal:
 
 ```bash
-sudo dnf install ./cam-controls-1.0.0-1.*.noarch.rpm
+sudo dnf install https://github.com/mottipython/cam-controls/releases/download/v1.0.0/cam-controls-1.0.0-1.noarch.rpm
+```
+
+### Debian / Ubuntu / Pop!_OS / Linux Mint (`.deb`)
+
+Install directly from terminal:
+
+```bash
+curl -LO https://github.com/mottipython/cam-controls/releases/download/v1.0.0/cam-controls_1.0.0_all.deb
+sudo dpkg -i cam-controls_1.0.0_all.deb || sudo apt-get install -f -y
 ```
 
 ### From Source
