@@ -16,22 +16,18 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Packaging Dependencies
+      - name: Install Packaging & Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y rpm binutils tar
+          sudo apt-get install -y cargo rustc libxkbcommon-dev libfontconfig1-dev rpm binutils tar python3
 
-      - name: Build Debian Package (.deb)
+      - name: Build All Distribution Packages (Rust & Python)
         run: |
-          make deb
-
-      - name: Build RPM Package (.rpm)
-        run: |
-          make rpm
+          make packages
 
       - name: List Generated Packages
         run: |
-          ls -la dist/
+          ls -lh dist/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/mottipython/cam-controls)](https://github.com/mottipython/cam-controls/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A lightweight, zero-dependency camera tuning utility and PipeWire fix for Linux webcams (especially **Logitech C310**, **C920**, and standard UVC webcams).
+A high-performance, native Rust camera tuning utility and PipeWire fix for Linux webcams (especially **Logitech C310**, **C920**, and standard UVC webcams).
 
 ![Camera Quick Controls](data/icons/hicolor/scalable/apps/cam-controls.svg)
 
@@ -20,14 +20,16 @@ Recent Linux releases (Nobara, Fedora, Arch, Ubuntu 24.04+) with PipeWire and Wi
 ### 2. Fixes Washed-Out, Faded, and Pale Webcam Colors
 Many USB webcams (particularly the Logitech C310) ship with factory defaults that set **Saturation** to only ~12% (`32` out of `255`) and **Contrast** to `32`, resulting in a gray, hazy, and washed-out image.
 
-`cam-controls` provides simple TV-style visual sliders and a single **"Apply Recommended"** button to instantly restore vivid, natural colors, depth, and skin tones.
+`cam-controls` provides simple visual sliders and a single **"Apply Recommended"** button to instantly restore vivid, natural colors, depth, and skin tones.
 
 ---
 
 ## Features
 
-- **Zero Heavy Dependencies:** Written in standard Python with native Tkinter—no heavy desktop frameworks or runtimes required.
-- **Smart Camera Switching:** Automatically detects all connected webcams (with hardware model names) and lets you switch between them on the fly.
+- **Blazing Native Rust Performance:** 100% compiled Rust with zero runtime dependencies. Instant startup (<15ms) and minimal RAM footprint.
+- **Zero-Lock Async V4L2 Engine:** Hardware `ioctl` commands execute non-blockingly on an asynchronous worker thread with immediate handle release (`O_RDWR` -> `ioctl` -> `close`), completely avoiding USB EP0 deadlocks when external camera apps (Snapshot, OBS, Discord) are streaming simultaneously.
+- **Native Wayland & X11 GUI:** Responsive hardware-accelerated UI that adapts seamlessly to desktop themes, with full Wayland application matching and high-resolution icons.
+- **Smart Camera Switching:** Automatically discovers all connected video capture webcams (with hardware model names) and resolves symlinks to stable nodes.
 - **Real-Time Sliders:** Adjust Saturation, Contrast, Brightness, Sharpness, Gain, Exposure Time, and White Balance Temperature live while watching your camera feed.
 - **Lighting Anti-Flicker:** Instantly eliminates rolling horizontal light bands from indoor fluorescent and LED lighting (`50 Hz` or `60 Hz`).
 - **Smart Exposure & White Balance:** One-click toggles for Auto White Balance and Auto Exposure, or unlock manual controls for studio environments.
@@ -36,7 +38,7 @@ Many USB webcams (particularly the Logitech C310) ship with factory defaults tha
 - **Dual PipeWire System Fixes:**
   - **Video Fix:** Bypasses experimental `libcamera` UVC pipeline to fix garbled, green, or diagonally sheared video.
   - **Audio Fix:** Resolves the notorious Logitech C310 16kHz microphone firmware reporting bug that causes fast/robotic "chipmunk" audio in Discord and Zoom.
-- **Full CLI Support:** Completely scriptable and headless-friendly (`cam-controls --status`, `cam-controls --apply-recommended`, `cam-controls --restore`).
+- **Full CLI Support:** Completely scriptable and headless-friendly (`cam-controls --status`, `--apply-recommended`, `--restore`, `--save-default`).
 
 ---
 
@@ -47,7 +49,7 @@ Many USB webcams (particularly the Logitech C310) ship with factory defaults tha
 Install directly from terminal:
 
 ```bash
-sudo dnf install https://github.com/mottipython/cam-controls/releases/download/v1.0.0/cam-controls-1.0.0-1.noarch.rpm
+sudo dnf install https://github.com/mottipython/cam-controls/releases/download/v2.0.0/cam-controls-2.0.0-1.x86_64.rpm
 ```
 
 ### Debian / Ubuntu / Pop!_OS / Linux Mint (`.deb`)
@@ -55,15 +57,18 @@ sudo dnf install https://github.com/mottipython/cam-controls/releases/download/v
 Install directly from terminal:
 
 ```bash
-curl -LO https://github.com/mottipython/cam-controls/releases/download/v1.0.0/cam-controls_1.0.0_all.deb
-sudo dpkg -i cam-controls_1.0.0_all.deb || sudo apt-get install -f -y
+curl -LO https://github.com/mottipython/cam-controls/releases/download/v2.0.0/cam-controls_2.0.0_amd64.deb
+sudo dpkg -i cam-controls_2.0.0_amd64.deb || sudo apt-get install -f -y
 ```
 
 ### From Source
 
+Requires standard `cargo` and `rustc`:
+
 ```bash
 git clone https://github.com/mottipython/cam-controls.git
 cd cam-controls
+make
 sudo make install
 ```
 
@@ -99,32 +104,7 @@ cam-controls --fix-pipewire
 
 # Fix robotic/fast microphone audio (Logitech 16kHz bug)
 cam-controls --fix-mic
-
-# Reset hardware to factory defaults
-cam-controls --reset-defaults
-
-# Target a specific camera by index or device path
-cam-controls -d 0 --status
-cam-controls -d /dev/video1 --apply-recommended
 ```
-
----
-
-## Building Packages Locally
-
-To build Debian (`.deb`) and RPM (`.rpm`) packages on your own machine:
-
-```bash
-# Build Debian package
-make deb
-
-# Build RPM package
-make rpm
-
-# Build both
-make packages
-```
-The output packages will be created in the `dist/` folder.
 
 ---
 

@@ -8,20 +8,52 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-debian:
-    name: Ubuntu VM (.deb test)
+  test-rust-debian:
+    name: Ubuntu VM - Rust Edition (.deb)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils desktop-file-utils python3 python3-tk
+          sudo apt-get install -y cargo rustc libxkbcommon-dev libfontconfig1-dev binutils desktop-file-utils
 
-      - name: Build Debian Package (.deb)
+      - name: Build Rust Debian Package
         run: make deb
+
+      - name: Install .deb Package
+        run: |
+          sudo dpkg -i dist/cam-controls_*_amd64.deb
+
+      - name: Verify Executable & Desktop Entry
+        run: |
+          cam-controls --version
+          cam-controls --help
+          desktop-file-validate /usr/share/applications/cam-controls.desktop
+          test -f /usr/share/icons/hicolor/scalable/apps/cam-controls.svg
+          test -f /usr/share/cam-controls/99-disable-libcamera.conf
+
+      - name: Test Package Removal
+        run: |
+          sudo dpkg -r cam-controls
+          ! which cam-controls
+
+  test-python-debian:
+    name: Ubuntu VM - Python Edition (.deb)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-tk binutils desktop-file-utils
+
+      - name: Build Python Debian Package
+        run: make deb-python
 
       - name: Install .deb Package
         run: |
@@ -40,8 +72,45 @@ jobs:
           sudo dpkg -r cam-controls
           ! which cam-controls
 
-  test-rpm:
-    name: Fedora VM (.rpm test)
+  test-rust-rpm:
+    name: Fedora VM - Rust Edition (.rpm)
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Install Tools & Dependencies
+        run: |
+          dnf install -y git make rpm-build rust cargo libxkbcommon-devel fontconfig-devel desktop-file-utils tar binutils
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure Git Safe Directory
+        run: |
+          git config --global --add safe.directory '*'
+
+      - name: Build Rust RPM Package
+        run: make rpm
+
+      - name: Install .rpm Package
+        run: |
+          dnf install -y dist/cam-controls-*.x86_64.rpm
+
+      - name: Verify Executable & Desktop Entry
+        run: |
+          cam-controls --version
+          cam-controls --help
+          desktop-file-validate /usr/share/applications/cam-controls.desktop
+          test -f /usr/share/icons/hicolor/scalable/apps/cam-controls.svg
+          test -f /usr/share/cam-controls/99-disable-libcamera.conf
+
+      - name: Test Package Removal
+        run: |
+          dnf remove -y cam-controls
+          ! which cam-controls
+
+  test-python-rpm:
+    name: Fedora VM - Python Edition (.rpm)
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
@@ -57,8 +126,8 @@ jobs:
         run: |
           git config --global --add safe.directory '*'
 
-      - name: Build RPM Package (.rpm)
-        run: make rpm
+      - name: Build Python RPM Package
+        run: make rpm-python
 
       - name: Install .rpm Package
         run: |
@@ -75,25 +144,4 @@ jobs:
       - name: Test Package Removal
         run: |
           dnf remove -y cam-controls
-          ! which cam-controls
-
-  test-source:
-    name: Source Install Test (make install)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install from Source
-        run: |
-          sudo make install
-
-      - name: Verify Executable
-        run: |
-          cam-controls --version
-          cam-controls --help
-
-      - name: Uninstall from Source
-        run: |
-          sudo make uninstall
           ! which cam-controls

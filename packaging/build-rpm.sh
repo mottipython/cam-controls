@@ -2,9 +2,12 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="1.0.0"
+VERSION="2.0.0"
 OUTPUT_DIR="$DIR/dist"
 RPMBUILD_DIR="$DIR/build/rpmbuild"
+
+echo "Building release binary with cargo..."
+(cd "$DIR" && cargo build --release)
 
 rm -rf "$RPMBUILD_DIR"
 mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}

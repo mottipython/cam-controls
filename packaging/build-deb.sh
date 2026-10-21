@@ -2,10 +2,13 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="1.2.2"
+VERSION="2.0.0"
 PKG_NAME="cam-controls"
 BUILD_DIR="$DIR/build/deb"
 OUTPUT_DIR="$DIR/dist"
+
+echo "Building release binary with cargo..."
+(cd "$DIR" && cargo build --release)
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/DEBIAN"
@@ -19,7 +22,7 @@ mkdir -p "$BUILD_DIR/usr/share/cam-controls"
 mkdir -p "$OUTPUT_DIR"
 
 # Copy files
-install -m 755 "$DIR/bin/cam-controls" "$BUILD_DIR/usr/bin/cam-controls"
+install -m 755 "$DIR/target/release/cam-controls" "$BUILD_DIR/usr/bin/cam-controls"
 install -m 644 "$DIR/data/cam-controls.desktop" "$BUILD_DIR/usr/share/applications/cam-controls.desktop"
 install -m 644 "$DIR/data/icons/hicolor/scalable/apps/cam-controls.svg" "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps/cam-controls.svg"
 for size in 16 24 32 48 64 128 256; do
@@ -33,17 +36,15 @@ Package: $PKG_NAME
 Version: $VERSION
 Section: video
 Priority: optional
-Architecture: all
-Depends: python3, python3-tk
+Architecture: amd64
 Maintainer: Motti Schleider <motti.schleider@gmail.com>
-Description: Camera Quick Controls & PipeWire video fix for Linux webcams
- Camera Quick Controls provides simple visual sliders for webcam saturation,
- contrast, brightness, sharpness, and white balance, with one-click fixes for
- washed-out colors and an automatic WirePlumber fix for garbled or green video
- on PipeWire systems.
+Description: High-performance Camera Quick Controls & PipeWire fix for Linux
+ High-performance Rust utility with direct V4L2 ioctl communication and
+ native desktop GUI for Linux webcams. Features custom presets, startup
+ persistence, and automatic fixes for PipeWire video distortion and mic sample rates.
 EOF
 
-DEB_FILE="$OUTPUT_DIR/${PKG_NAME}_${VERSION}_all.deb"
+DEB_FILE="$OUTPUT_DIR/${PKG_NAME}_${VERSION}_amd64.deb"
 
 if command -v dpkg-deb >/dev/null 2>&1; then
     dpkg-deb --build --root-owner-group "$BUILD_DIR" "$DEB_FILE"
