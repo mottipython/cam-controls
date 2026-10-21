@@ -2,7 +2,8 @@
 """
 Camera Quick Controls & Linux PipeWire Fix
 Adjusts webcam controls (saturation, contrast, brightness, white balance, exposure, anti-flicker)
-with multi-camera switching, custom presets, startup persistence, and PipeWire video/audio fixes.
+with non-blocking asynchronous hardware communication, multi-camera switching, custom presets,
+startup persistence, and PipeWire video/audio fixes.
 """
 
 import os
@@ -13,8 +14,11 @@ import fcntl
 import struct
 import argparse
 import subprocess
+import threading
+import queue
+import time
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 # Embedded 48x48 webcam icon (avoids generic X icon)
 ICON_PNG_B64 = """iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAACXBI
@@ -103,50 +107,117 @@ BUILTIN_PRESETS = {
     }
 }
 
-def list_capture_cameras():
-    """Discover all real video capture devices and their hardware names."""
-    cameras = []
-    for dev in sorted(glob.glob('/dev/video*')):
-        try:
-            fd = os.open(dev, os.O_RDWR)
-            cap = fcntl.ioctl(fd, VIDIOC_QUERYCAP, b'\x00' * 104)
-            driver, card, bus, ver, caps, dev_caps, _, _, _ = struct.unpack('16s32s32sIIIIII', cap)
-            eff_caps = dev_caps if (caps & V4L2_CAP_DEVICE_CAPS) else caps
-            if eff_caps & V4L2_CAP_VIDEO_CAPTURE:
-                name = card.split(b'\x00')[0].decode('latin1', errors='replace').strip()
-                driver_name = driver.split(b'\x00')[0].decode('latin1', errors='replace').strip()
-                cameras.append({
-                    "device": dev,
-                    "name": name or f"Camera ({os.path.basename(dev)})",
-                    "driver": driver_name
-                })
-            os.close(fd)
-        except OSError:
-            pass
-    return cameras
+class NonBlockingWorker:
+    """Background worker to execute USB ioctls without freezing the UI."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.pending = {}  # (dev_path, cid) -> val
+        self.cond = threading.Condition(self.lock)
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
 
-def query_control(fd, cid):
-    query = struct.pack('II32siiiiIII', cid, 0, b'', 0, 0, 0, 0, 0, 0, 0)
+    def set_control_async(self, dev_path, cid, val):
+        with self.cond:
+            self.pending[(dev_path, cid)] = val
+            self.cond.notify()
+
+    def _run(self):
+        while self.running:
+            with self.cond:
+                while not self.pending and self.running:
+                    self.cond.wait(timeout=1.0)
+                if not self.running:
+                    break
+                items = list(self.pending.items())
+                self.pending.clear()
+
+            for (dev_path, cid), val in items:
+                execute_set_control(dev_path, cid, val)
+                time.sleep(0.01)  # Gentle spacing to avoid USB bus congestion
+
+worker = NonBlockingWorker()
+
+def execute_set_control(dev_path, cid, val):
+    """Open device, send ioctl, and close immediately."""
     try:
-        res = fcntl.ioctl(fd, VIDIOC_QUERYCTRL, query)
-        _, qtype, name, qmin, qmax, qstep, qdef, qflags, _, _ = struct.unpack('II32siiiiIII', res)
-        if (qflags & 1) or qtype not in (1, 2, 3):  # 1=integer, 2=boolean, 3=menu
-            return None
-        name_str = name.split(b'\x00')[0].decode('latin1').strip()
-        ctrl = struct.pack('Ii', cid, 0)
-        res_ctrl = fcntl.ioctl(fd, VIDIOC_G_CTRL, ctrl)
-        _, val = struct.unpack('Ii', res_ctrl)
-        return {"name": name_str, "type": qtype, "min": qmin, "max": qmax, "step": qstep, "default": qdef, "current": val}
+        fd = os.open(dev_path, os.O_RDWR)
+        try:
+            data = struct.pack('Ii', cid, int(val))
+            fcntl.ioctl(fd, VIDIOC_S_CTRL, data)
+            return True
+        finally:
+            os.close(fd)
+    except OSError:
+        return False
+
+def query_control_single(dev_path, cid):
+    """Safely query a single control value and range."""
+    try:
+        fd = os.open(dev_path, os.O_RDWR)
+        try:
+            query = struct.pack('II32siiiiIII', cid, 0, b'', 0, 0, 0, 0, 0, 0, 0)
+            res = fcntl.ioctl(fd, VIDIOC_QUERYCTRL, query)
+            _, qtype, name, qmin, qmax, qstep, qdef, qflags, _, _ = struct.unpack('II32siiiiIII', res)
+            if (qflags & 1) or qtype not in (1, 2, 3):
+                return None
+            name_str = name.split(b'\x00')[0].decode('latin1').strip()
+            ctrl = struct.pack('Ii', cid, 0)
+            res_ctrl = fcntl.ioctl(fd, VIDIOC_G_CTRL, ctrl)
+            _, val = struct.unpack('Ii', res_ctrl)
+            return {"name": name_str, "type": qtype, "min": qmin, "max": qmax, "step": qstep, "default": qdef, "current": val}
+        finally:
+            os.close(fd)
     except OSError:
         return None
 
-def set_control(fd, cid, val):
-    data = struct.pack('Ii', cid, int(val))
-    try:
-        fcntl.ioctl(fd, VIDIOC_S_CTRL, data)
-        return True
-    except OSError:
-        return False
+def list_capture_cameras():
+    """Discover real video capture devices, resolving symlinks to stable nodes."""
+    cameras = []
+    # Check stable by-id symlinks first
+    for link in sorted(glob.glob('/dev/v4l/by-id/*index0*')):
+        try:
+            real_dev = os.path.realpath(link)
+            fd = os.open(real_dev, os.O_RDWR)
+            try:
+                cap = fcntl.ioctl(fd, VIDIOC_QUERYCAP, b'\x00' * 104)
+                driver, card, bus, ver, caps, dev_caps, _, _, _ = struct.unpack('16s32s32sIIIIII', cap)
+                eff_caps = dev_caps if (caps & V4L2_CAP_DEVICE_CAPS) else caps
+                if eff_caps & V4L2_CAP_VIDEO_CAPTURE:
+                    name = card.split(b'\x00')[0].decode('latin1', errors='replace').strip()
+                    driver_name = driver.split(b'\x00')[0].decode('latin1', errors='replace').strip()
+                    cameras.append({
+                        "device": real_dev,
+                        "name": name or f"Camera ({os.path.basename(real_dev)})",
+                        "driver": driver_name
+                    })
+            finally:
+                os.close(fd)
+        except OSError:
+            pass
+
+    # If no by-id devices found, check standard /dev/video*
+    if not cameras:
+        for dev in sorted(glob.glob('/dev/video*')):
+            try:
+                fd = os.open(dev, os.O_RDWR)
+                try:
+                    cap = fcntl.ioctl(fd, VIDIOC_QUERYCAP, b'\x00' * 104)
+                    driver, card, bus, ver, caps, dev_caps, _, _, _ = struct.unpack('16s32s32sIIIIII', cap)
+                    eff_caps = dev_caps if (caps & V4L2_CAP_DEVICE_CAPS) else caps
+                    if eff_caps & V4L2_CAP_VIDEO_CAPTURE:
+                        name = card.split(b'\x00')[0].decode('latin1', errors='replace').strip()
+                        driver_name = driver.split(b'\x00')[0].decode('latin1', errors='replace').strip()
+                        cameras.append({
+                            "device": dev,
+                            "name": name or f"Camera ({os.path.basename(dev)})",
+                            "driver": driver_name
+                        })
+                finally:
+                    os.close(fd)
+            except OSError:
+                pass
+    return cameras
 
 def fix_pipewire():
     """Install 99-disable-libcamera.conf to bypass buggy libcamera UVC handler."""
@@ -205,11 +276,6 @@ monitor.alsa.rules = [
 def save_startup_default(dev_path):
     """Save current camera settings to startup default file and enable autostart."""
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    try:
-        fd = os.open(dev_path, os.O_RDWR)
-    except Exception as e:
-        return False, f"Failed to open device: {e}"
-
     cids_to_save = [
         CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS,
         CID_GAIN, CID_WHITE_BALANCE_TEMP, CID_AUTO_WHITE_BALANCE,
@@ -217,15 +283,13 @@ def save_startup_default(dev_path):
     ]
     saved_state = {}
     for cid in cids_to_save:
-        info = query_control(fd, cid)
+        info = query_control_single(dev_path, cid)
         if info:
             saved_state[str(cid)] = info["current"]
-    os.close(fd)
 
     with open(STARTUP_FILE, 'w') as f:
         json.dump(saved_state, f, indent=2)
 
-    # Enable autostart entry
     os.makedirs(os.path.dirname(AUTOSTART_FILE), exist_ok=True)
     autostart_content = """[Desktop Entry]
 Type=Application
@@ -253,13 +317,8 @@ def restore_startup_defaults():
 
     cameras = list_capture_cameras()
     for cam in cameras:
-        try:
-            fd = os.open(cam["device"], os.O_RDWR)
-            for cid_str, val in saved_state.items():
-                set_control(fd, int(cid_str), val)
-            os.close(fd)
-        except OSError:
-            pass
+        for cid_str, val in saved_state.items():
+            execute_set_control(cam["device"], int(cid_str), val)
 
 def load_user_profiles():
     if os.path.exists(PROFILES_FILE):
@@ -285,21 +344,14 @@ def delete_user_profile(name):
             json.dump(profiles, f, indent=2)
 
 def print_status(dev_path):
-    try:
-        fd = os.open(dev_path, os.O_RDWR)
-    except Exception as e:
-        print(f"Failed to open {dev_path}: {e}")
-        return
-
     print(f"Camera Device: {dev_path} ({os.path.realpath(dev_path)})")
     print("-" * 65)
     for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS,
                 CID_WHITE_BALANCE_TEMP, CID_AUTO_WHITE_BALANCE, CID_GAIN,
                 CID_EXPOSURE_AUTO, CID_EXPOSURE_ABSOLUTE, CID_POWER_LINE_FREQ]:
-        info = query_control(fd, cid)
+        info = query_control_single(dev_path, cid)
         if info:
             print(f"{info['name']:25}: Current={info['current']:<5} (Min={info['min']}, Max={info['max']}, Default={info['default']})")
-    os.close(fd)
 
 def run_gui(initial_dev=None):
     try:
@@ -322,10 +374,9 @@ def run_gui(initial_dev=None):
             except Exception:
                 pass
 
-            self.fd = None
             self.current_dev = None
             self.slider_vars = {}
-            self.check_vars = {}
+            self.debounce_timers = {}
             self.user_profiles = load_user_profiles()
 
             self.main_frame = ttk.Frame(root, padding=15)
@@ -431,39 +482,26 @@ def run_gui(initial_dev=None):
                 self.load_camera(self.cameras[idx]["device"])
 
         def load_camera(self, dev_path):
-            if self.fd is not None:
-                try:
-                    os.close(self.fd)
-                except OSError:
-                    pass
-                self.fd = None
-
             self.current_dev = dev_path
             for widget in self.sliders_frame.winfo_children():
                 widget.destroy()
 
-            try:
-                self.fd = os.open(dev_path, os.O_RDWR)
-            except Exception as e:
-                ttk.Label(self.sliders_frame, text=f"Could not open {dev_path}:\n{e}", foreground="red").pack(pady=20)
-                return
-
-            # Read auto-adjustments
-            awb_info = query_control(self.fd, CID_AUTO_WHITE_BALANCE)
+            # Read auto-adjustments (safe, opens & closes immediately)
+            awb_info = query_control_single(dev_path, CID_AUTO_WHITE_BALANCE)
             if awb_info:
                 self.auto_wb_var.set(bool(awb_info["current"]))
                 self.chk_auto_wb.state(["!disabled"])
             else:
                 self.chk_auto_wb.state(["disabled"])
 
-            aexp_info = query_control(self.fd, CID_EXPOSURE_AUTO)
+            aexp_info = query_control_single(dev_path, CID_EXPOSURE_AUTO)
             if aexp_info:
                 self.auto_exp_var.set(aexp_info["current"] == 3)
                 self.chk_auto_exp.state(["!disabled"])
             else:
                 self.chk_auto_exp.state(["disabled"])
 
-            freq_info = query_control(self.fd, CID_POWER_LINE_FREQ)
+            freq_info = query_control_single(dev_path, CID_POWER_LINE_FREQ)
             if freq_info:
                 self.flicker_combo.current(min(freq_info["current"], 2))
                 self.flicker_combo.state(["!disabled"])
@@ -483,7 +521,7 @@ def run_gui(initial_dev=None):
             ]
 
             for cid, label in main_cids:
-                info = query_control(self.fd, cid)
+                info = query_control_single(dev_path, cid)
                 if not info:
                     continue
 
@@ -498,7 +536,7 @@ def run_gui(initial_dev=None):
 
                 scale = ttk.Scale(
                     row, from_=info["min"], to=info["max"], value=info["current"],
-                    command=lambda val, c=cid, vl=val_lbl: self.on_slider(c, val, vl)
+                    command=lambda val, c=cid, vl=val_lbl: self.on_slider_debounced(c, val, vl)
                 )
                 scale.pack(side="left", fill="x", expand=True, padx=8)
                 self.slider_vars[cid] = (scale, val_lbl)
@@ -506,43 +544,46 @@ def run_gui(initial_dev=None):
             self.update_slider_states()
 
         def update_slider_states(self):
-            # Disable WB slider if Auto WB is active
             if CID_WHITE_BALANCE_TEMP in self.slider_vars:
                 scale, _ = self.slider_vars[CID_WHITE_BALANCE_TEMP]
                 scale.state(["disabled" if self.auto_wb_var.get() else "!disabled"])
 
-            # Disable Exposure slider if Auto Exposure is active
             if CID_EXPOSURE_ABSOLUTE in self.slider_vars:
                 scale, _ = self.slider_vars[CID_EXPOSURE_ABSOLUTE]
                 scale.state(["disabled" if self.auto_exp_var.get() else "!disabled"])
 
-        def on_slider(self, cid, val, label):
+        def on_slider_debounced(self, cid, val, label):
             val_int = int(float(val))
             label.config(text=str(val_int))
-            if self.fd is not None:
-                set_control(self.fd, cid, val_int)
+            # Debounce by 40ms to avoid flooding USB endpoint
+            if cid in self.debounce_timers:
+                self.root.after_cancel(self.debounce_timers[cid])
+            self.debounce_timers[cid] = self.root.after(40, lambda: self.dispatch_control(cid, val_int))
+
+        def dispatch_control(self, cid, val_int):
+            if self.current_dev:
+                worker.set_control_async(self.current_dev, cid, val_int)
 
         def toggle_auto_wb(self):
-            if self.fd is not None:
-                set_control(self.fd, CID_AUTO_WHITE_BALANCE, 1 if self.auto_wb_var.get() else 0)
+            if self.current_dev:
+                worker.set_control_async(self.current_dev, CID_AUTO_WHITE_BALANCE, 1 if self.auto_wb_var.get() else 0)
                 self.update_slider_states()
 
         def toggle_auto_exp(self):
-            if self.fd is not None:
-                # 3 = Auto (Aperture Priority), 1 = Manual
-                set_control(self.fd, CID_EXPOSURE_AUTO, 3 if self.auto_exp_var.get() else 1)
+            if self.current_dev:
+                worker.set_control_async(self.current_dev, CID_EXPOSURE_AUTO, 3 if self.auto_exp_var.get() else 1)
                 self.update_slider_states()
 
         def on_flicker_select(self, event=None):
-            if self.fd is not None:
-                set_control(self.fd, CID_POWER_LINE_FREQ, self.flicker_combo.current())
+            if self.current_dev:
+                worker.set_control_async(self.current_dev, CID_POWER_LINE_FREQ, self.flicker_combo.current())
 
         def apply_values_dict(self, values_dict):
-            if self.fd is None:
+            if not self.current_dev:
                 return
             for cid_key, val in values_dict.items():
                 cid = int(cid_key)
-                set_control(self.fd, cid, val)
+                worker.set_control_async(self.current_dev, cid, val)
                 if cid in self.slider_vars:
                     scale, lbl = self.slider_vars[cid]
                     scale.set(val)
@@ -597,15 +638,15 @@ def run_gui(initial_dev=None):
             self.preset_combo.set("Recommended (Vivid)")
 
         def reset_defaults(self):
-            if self.fd is None:
+            if not self.current_dev:
                 return
             for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS,
                         CID_GAIN, CID_WHITE_BALANCE_TEMP, CID_AUTO_WHITE_BALANCE,
                         CID_EXPOSURE_AUTO, CID_EXPOSURE_ABSOLUTE, CID_POWER_LINE_FREQ]:
-                info = query_control(self.fd, cid)
+                info = query_control_single(self.current_dev, cid)
                 if info:
                     val = info["default"]
-                    set_control(self.fd, cid, val)
+                    worker.set_control_async(self.current_dev, cid, val)
                     if cid in self.slider_vars:
                         scale, lbl = self.slider_vars[cid]
                         scale.set(val)
@@ -650,7 +691,7 @@ def run_gui(initial_dev=None):
 def main():
     parser = argparse.ArgumentParser(description="Camera Quick Controls & Linux PipeWire Fix")
     parser.add_argument("-l", "--list-devices", action="store_true", help="List all detected camera devices")
-    parser.add_argument("-d", "--device", help="Path to video device (e.g. /dev/video1) or camera index")
+    parser.add_argument("-d", "--device", help="Path to video device (e.g. /dev/video0) or camera index")
     parser.add_argument("--status", action="store_true", help="Print current camera control values")
     parser.add_argument("--apply-recommended", action="store_true", help="Apply recommended settings")
     parser.add_argument("--reset-defaults", action="store_true", help="Reset controls to hardware defaults")
@@ -716,27 +757,17 @@ def main():
         return
 
     if args.apply_recommended:
-        try:
-            fd = os.open(dev, os.O_RDWR)
-            for cid, val in BUILTIN_PRESETS["Recommended (Vivid)"].items():
-                set_control(fd, cid, val)
-            os.close(fd)
-            print(f"Recommended profile applied to {dev}!")
-        except Exception as e:
-            print(f"Error: {e}")
+        for cid, val in BUILTIN_PRESETS["Recommended (Vivid)"].items():
+            execute_set_control(dev, cid, val)
+        print(f"Recommended profile applied to {dev}!")
         return
 
     if args.reset_defaults:
-        try:
-            fd = os.open(dev, os.O_RDWR)
-            for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS, CID_GAIN]:
-                info = query_control(fd, cid)
-                if info:
-                    set_control(fd, cid, info["default"])
-            os.close(fd)
-            print(f"Defaults restored on {dev}!")
-        except Exception as e:
-            print(f"Error: {e}")
+        for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS, CID_GAIN]:
+            info = query_control_single(dev, cid)
+            if info:
+                execute_set_control(dev, cid, info["default"])
+        print(f"Defaults restored on {dev}!")
         return
 
     # Default to GUI
