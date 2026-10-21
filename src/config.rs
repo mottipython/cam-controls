@@ -22,57 +22,31 @@ pub fn get_autostart_file() -> PathBuf {
     PathBuf::from(home).join(".config").join("autostart").join("cam-controls-restore.desktop")
 }
 
+const PRESETS: &[(&str, &[(u32, i32)])] = &[
+    ("Recommended (Vivid)", &[
+        (CID_SATURATION, 56), (CID_CONTRAST, 42), (CID_BRIGHTNESS, 128),
+        (CID_SHARPNESS, 28), (CID_GAIN, 32), (CID_AUTO_WHITE_BALANCE, 1),
+        (CID_EXPOSURE_AUTO, 3), (CID_POWER_LINE_FREQ, 2),
+    ]),
+    ("Daylight / Office", &[
+        (CID_SATURATION, 50), (CID_CONTRAST, 40), (CID_BRIGHTNESS, 124),
+        (CID_SHARPNESS, 26), (CID_GAIN, 24), (CID_WHITE_BALANCE_TEMP, 5200),
+        (CID_AUTO_WHITE_BALANCE, 0), (CID_EXPOSURE_AUTO, 3), (CID_POWER_LINE_FREQ, 2),
+    ]),
+    ("Night / Warm Lamp", &[
+        (CID_SATURATION, 54), (CID_CONTRAST, 44), (CID_BRIGHTNESS, 134),
+        (CID_SHARPNESS, 28), (CID_GAIN, 36), (CID_WHITE_BALANCE_TEMP, 3800),
+        (CID_AUTO_WHITE_BALANCE, 0), (CID_EXPOSURE_AUTO, 3), (CID_POWER_LINE_FREQ, 2),
+    ]),
+    ("Cool / Studio", &[
+        (CID_SATURATION, 58), (CID_CONTRAST, 46), (CID_BRIGHTNESS, 128),
+        (CID_SHARPNESS, 30), (CID_GAIN, 32), (CID_WHITE_BALANCE_TEMP, 6200),
+        (CID_AUTO_WHITE_BALANCE, 0), (CID_EXPOSURE_AUTO, 3), (CID_POWER_LINE_FREQ, 2),
+    ]),
+];
+
 pub fn get_builtin_presets() -> HashMap<&'static str, HashMap<u32, i32>> {
-    let mut presets = HashMap::new();
-
-    let mut vivid = HashMap::new();
-    vivid.insert(CID_SATURATION, 56);
-    vivid.insert(CID_CONTRAST, 42);
-    vivid.insert(CID_BRIGHTNESS, 128);
-    vivid.insert(CID_SHARPNESS, 28);
-    vivid.insert(CID_GAIN, 32);
-    vivid.insert(CID_AUTO_WHITE_BALANCE, 1);
-    vivid.insert(CID_EXPOSURE_AUTO, 3);
-    vivid.insert(CID_POWER_LINE_FREQ, 2);
-    presets.insert("Recommended (Vivid)", vivid);
-
-    let mut daylight = HashMap::new();
-    daylight.insert(CID_SATURATION, 50);
-    daylight.insert(CID_CONTRAST, 40);
-    daylight.insert(CID_BRIGHTNESS, 124);
-    daylight.insert(CID_SHARPNESS, 26);
-    daylight.insert(CID_GAIN, 24);
-    daylight.insert(CID_WHITE_BALANCE_TEMP, 5200);
-    daylight.insert(CID_AUTO_WHITE_BALANCE, 0);
-    daylight.insert(CID_EXPOSURE_AUTO, 3);
-    daylight.insert(CID_POWER_LINE_FREQ, 2);
-    presets.insert("Daylight / Office", daylight);
-
-    let mut warm = HashMap::new();
-    warm.insert(CID_SATURATION, 54);
-    warm.insert(CID_CONTRAST, 44);
-    warm.insert(CID_BRIGHTNESS, 134);
-    warm.insert(CID_SHARPNESS, 28);
-    warm.insert(CID_GAIN, 36);
-    warm.insert(CID_WHITE_BALANCE_TEMP, 3800);
-    warm.insert(CID_AUTO_WHITE_BALANCE, 0);
-    warm.insert(CID_EXPOSURE_AUTO, 3);
-    warm.insert(CID_POWER_LINE_FREQ, 2);
-    presets.insert("Night / Warm Lamp", warm);
-
-    let mut cool = HashMap::new();
-    cool.insert(CID_SATURATION, 58);
-    cool.insert(CID_CONTRAST, 46);
-    cool.insert(CID_BRIGHTNESS, 128);
-    cool.insert(CID_SHARPNESS, 30);
-    cool.insert(CID_GAIN, 32);
-    cool.insert(CID_WHITE_BALANCE_TEMP, 6200);
-    cool.insert(CID_AUTO_WHITE_BALANCE, 0);
-    cool.insert(CID_EXPOSURE_AUTO, 3);
-    cool.insert(CID_POWER_LINE_FREQ, 2);
-    presets.insert("Cool / Studio", cool);
-
-    presets
+    PRESETS.iter().map(|&(name, pairs)| (name, pairs.iter().copied().collect())).collect()
 }
 
 pub fn load_user_profiles() -> HashMap<String, HashMap<u32, i32>> {
@@ -95,43 +69,28 @@ pub fn load_user_profiles() -> HashMap<String, HashMap<u32, i32>> {
     HashMap::new()
 }
 
-pub fn save_user_profile(name: &str, values: &HashMap<u32, i32>) {
-    let dir = get_config_dir();
-    let _ = fs::create_dir_all(&dir);
-
-    let mut profiles = load_user_profiles();
-    profiles.insert(name.to_string(), values.clone());
-
-    let mut raw_map: HashMap<String, HashMap<String, i32>> = HashMap::new();
-    for (pname, vals) in profiles {
-        let mut str_vals = HashMap::new();
-        for (cid, val) in vals {
-            str_vals.insert(cid.to_string(), val);
-        }
-        raw_map.insert(pname, str_vals);
-    }
+fn write_user_profiles(profiles: &HashMap<String, HashMap<u32, i32>>) {
+    let raw_map: HashMap<&str, HashMap<String, i32>> = profiles
+        .iter()
+        .map(|(pname, vals)| (pname.as_str(), vals.iter().map(|(k, v)| (k.to_string(), *v)).collect()))
+        .collect();
 
     if let Ok(json_str) = serde_json::to_string_pretty(&raw_map) {
         let _ = fs::write(get_profiles_file(), json_str);
     }
 }
 
+pub fn save_user_profile(name: &str, values: &HashMap<u32, i32>) {
+    let _ = fs::create_dir_all(get_config_dir());
+    let mut profiles = load_user_profiles();
+    profiles.insert(name.to_string(), values.clone());
+    write_user_profiles(&profiles);
+}
+
 pub fn delete_user_profile(name: &str) {
     let mut profiles = load_user_profiles();
     profiles.remove(name);
-
-    let mut raw_map: HashMap<String, HashMap<String, i32>> = HashMap::new();
-    for (pname, vals) in profiles {
-        let mut str_vals = HashMap::new();
-        for (cid, val) in vals {
-            str_vals.insert(cid.to_string(), val);
-        }
-        raw_map.insert(pname, str_vals);
-    }
-
-    if let Ok(json_str) = serde_json::to_string_pretty(&raw_map) {
-        let _ = fs::write(get_profiles_file(), json_str);
-    }
+    write_user_profiles(&profiles);
 }
 
 pub fn save_startup_default(dev_path: &str) -> Result<String, String> {
