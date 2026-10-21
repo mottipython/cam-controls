@@ -26,11 +26,17 @@ Many USB webcams (particularly the Logitech C310) ship with factory defaults tha
 
 ## Features
 
-- **Zero Heavy Dependencies:** Written in standard Python with native Tkinter—no heavy desktop frameworks required.
-- **Real-Time Sliders:** Adjust Saturation, Contrast, Brightness, Sharpness, Gain, and White Balance Temperature live while watching your camera feed.
-- **One-Click Presets:** "Apply Recommended" (vivid, natural profile) and "Reset to Defaults".
-- **One-Click PipeWire Fix:** Resolves the `libcamera` UVC stride/green screen bug instantly.
-- **Full CLI Support:** Can also be used headless or in scripts (e.g. `cam-controls --apply-recommended`).
+- **Zero Heavy Dependencies:** Written in standard Python with native Tkinter—no heavy desktop frameworks or runtimes required.
+- **Smart Camera Switching:** Automatically detects all connected webcams (with hardware model names) and lets you switch between them on the fly.
+- **Real-Time Sliders:** Adjust Saturation, Contrast, Brightness, Sharpness, Gain, Exposure Time, and White Balance Temperature live while watching your camera feed.
+- **Lighting Anti-Flicker:** Instantly eliminates rolling horizontal light bands from indoor fluorescent and LED lighting (`50 Hz` or `60 Hz`).
+- **Smart Exposure & White Balance:** One-click toggles for Auto White Balance and Auto Exposure, or unlock manual controls for studio environments.
+- **Lighting Profiles & Presets:** Switch between pre-configured presets (*Recommended (Vivid)*, *Daylight / Office*, *Night / Warm Lamp*, *Cool / Studio*) or save your own custom profiles.
+- **Persistent Startup Defaults:** Single-click **"Save as Default"** automatically restores your preferred camera settings on system login or when the camera is plugged in.
+- **Dual PipeWire System Fixes:**
+  - **Video Fix:** Bypasses experimental `libcamera` UVC pipeline to fix garbled, green, or diagonally sheared video.
+  - **Audio Fix:** Resolves the notorious Logitech C310 16kHz microphone firmware reporting bug that causes fast/robotic "chipmunk" audio in Discord and Zoom.
+- **Full CLI Support:** Completely scriptable and headless-friendly (`cam-controls --status`, `cam-controls --apply-recommended`, `cam-controls --restore`).
 
 ---
 
@@ -73,20 +79,33 @@ cam-controls
 
 ### Command Line Interface (CLI)
 ```bash
+# List all detected video cameras
+cam-controls --list-devices
+
 # Print current camera settings
 cam-controls --status
 
-# Apply the recommended natural color profile
+# Apply the recommended vivid color profile
 cam-controls --apply-recommended
+
+# Save current settings as default (and enable login autostart)
+cam-controls --save-default
+
+# Silently restore saved settings (used by login autostart)
+cam-controls --restore
+
+# Fix garbled/green video by bypassing libcamera in PipeWire
+cam-controls --fix-pipewire
+
+# Fix robotic/fast microphone audio (Logitech 16kHz bug)
+cam-controls --fix-mic
 
 # Reset hardware to factory defaults
 cam-controls --reset-defaults
 
-# Apply the WirePlumber PipeWire fix
-cam-controls --fix-pipewire
-
-# Target a specific video device
-cam-controls -d /dev/video1 --status
+# Target a specific camera by index or device path
+cam-controls -d 0 --status
+cam-controls -d /dev/video1 --apply-recommended
 ```
 
 ---

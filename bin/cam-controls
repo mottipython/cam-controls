@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
 """
 Camera Quick Controls & Linux PipeWire Fix
-Adjusts webcam controls (saturation, contrast, brightness, white balance)
-with multi-camera support, PipeWire UVC video fix, and desktop settings integration.
+Adjusts webcam controls (saturation, contrast, brightness, white balance, exposure, anti-flicker)
+with multi-camera switching, custom presets, startup persistence, and PipeWire video/audio fixes.
 """
 
 import os
 import sys
 import glob
+import json
 import fcntl
 import struct
 import argparse
 import subprocess
 
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 # Embedded 48x48 webcam icon (avoids generic X icon)
-ICON_PNG_B64 = "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"
+ICON_PNG_B64 = """iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAACXBI
+WXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6QoUFAgi2iR9ZgAAAhxJREFUaN7tmT1rwkAcxp9rYqGg
+Q10cOjl0r5OhOBRc+hls7Wb3+gx+BvfqVOhL4eB0cFBw66Chgw4dREeH6mBS7nA3SYwxxsSZv0v+
+8ODec4/nx3vvyfE4Y/bs2fPvD2b6+4y54B7v90F57z2fC4D7uT0APAD8/H8B7t8AcN+zB8A/e3y9
+AH6f7wDgXgD8/P3tAfAvAHz/3gB87/8FwB4Ae3sAvAHAfQDw+4wBAPcCwPfvDQDeA+B3wPs7gHsB
+8H1nAPd5ADzD/wXgngDs7QHwewB8/94A7gXAz7cDeACAx9953wHs/QHgAeCvB+ANAB7/5v0E8HcA
+/P7eAO4DwD8/DPAQAPf9u4F7AfDz97e/e7j/AP4OAM9/APc9e/v8fgDgPgC+7419A/g7ADz/AeBe
+AHh8f94E8Gf439cA7t8A8Psf3/4B8PsA/Pv3v/8fAF7/APAeAO75P47/A8D3/Q8A7x8A7gXA4/sH
+gHsB4PH9A8C9APD4/gHgXgB4fP8AcC8APL5/ALgXAB7fPwDc77v3DPA2AP8L4NUA8J8f3wbwOIA/
+A/APALwBwH0A8P0D4FEAPv8A8BgAvv/9AvAAAP75B4DH/wHgHwDw69/6+wfArwHw+z8A8NMAvP4B
+4DEAPL5/AHgMAP/8AfAYAP75A+AxAPzzB8BjAPjnD4DHAPDPHwCPfwAe3z8AHgMAPD4AeDwAeDwA
+eDwAeDwAeDwAeDwAeDwAeDwAeDwAePwHgH8BfvB1m8+rT5wAAAAASUVORK5CYII="""
 
 # V4L2 ioctl codes
 VIDIOC_QUERYCAP  = 0x80685600
@@ -27,24 +39,74 @@ VIDIOC_S_CTRL    = 0xc008561c
 V4L2_CAP_VIDEO_CAPTURE = 0x00000001
 V4L2_CAP_DEVICE_CAPS   = 0x80000000
 
-# Priority list for known controls
-PREFERRED_ORDER = [
-    (0x00980902, "Saturation",          56),
-    (0x00980901, "Contrast",            42),
-    (0x00980900, "Brightness",          128),
-    (0x0098091b, "Sharpness",           28),
-    (0x0098091a, "White Balance Temp",  4500),
-    (0x00980913, "Gain",                32),
-    (0x0098091c, "Backlight Compensation", None),
-]
+# V4L2 Control IDs
+CID_BRIGHTNESS         = 0x00980900
+CID_CONTRAST           = 0x00980901
+CID_SATURATION         = 0x00980902
+CID_AUTO_WHITE_BALANCE = 0x0098090c
+CID_GAIN               = 0x00980913
+CID_POWER_LINE_FREQ    = 0x00980918
+CID_WHITE_BALANCE_TEMP = 0x0098091a
+CID_SHARPNESS          = 0x0098091b
+CID_BACKLIGHT_COMP     = 0x0098091c
+CID_EXPOSURE_AUTO      = 0x009a0901
+CID_EXPOSURE_ABSOLUTE  = 0x009a0902
+
+CONFIG_DIR = os.path.expanduser("~/.config/cam-controls")
+PROFILES_FILE = os.path.join(CONFIG_DIR, "profiles.json")
+STARTUP_FILE = os.path.join(CONFIG_DIR, "startup-default.json")
+AUTOSTART_FILE = os.path.expanduser("~/.config/autostart/cam-controls-restore.desktop")
+
+BUILTIN_PRESETS = {
+    "Recommended (Vivid)": {
+        CID_SATURATION: 56,
+        CID_CONTRAST: 42,
+        CID_BRIGHTNESS: 128,
+        CID_SHARPNESS: 28,
+        CID_GAIN: 32,
+        CID_AUTO_WHITE_BALANCE: 1,
+        CID_EXPOSURE_AUTO: 3,
+        CID_POWER_LINE_FREQ: 2,
+    },
+    "Daylight / Office": {
+        CID_SATURATION: 50,
+        CID_CONTRAST: 40,
+        CID_BRIGHTNESS: 124,
+        CID_SHARPNESS: 26,
+        CID_GAIN: 24,
+        CID_WHITE_BALANCE_TEMP: 5200,
+        CID_AUTO_WHITE_BALANCE: 0,
+        CID_EXPOSURE_AUTO: 3,
+        CID_POWER_LINE_FREQ: 2,
+    },
+    "Night / Warm Lamp": {
+        CID_SATURATION: 54,
+        CID_CONTRAST: 44,
+        CID_BRIGHTNESS: 134,
+        CID_SHARPNESS: 28,
+        CID_GAIN: 36,
+        CID_WHITE_BALANCE_TEMP: 3800,
+        CID_AUTO_WHITE_BALANCE: 0,
+        CID_EXPOSURE_AUTO: 3,
+        CID_POWER_LINE_FREQ: 2,
+    },
+    "Cool / Studio": {
+        CID_SATURATION: 58,
+        CID_CONTRAST: 46,
+        CID_BRIGHTNESS: 128,
+        CID_SHARPNESS: 30,
+        CID_GAIN: 32,
+        CID_WHITE_BALANCE_TEMP: 6200,
+        CID_AUTO_WHITE_BALANCE: 0,
+        CID_EXPOSURE_AUTO: 3,
+        CID_POWER_LINE_FREQ: 2,
+    }
+}
 
 def list_capture_cameras():
     """Discover all real video capture devices and their hardware names."""
     cameras = []
-    # Sort with /dev/v4l/by-id preference if available
-    devices = sorted(glob.glob('/dev/video*'))
-    
-    for dev in devices:
+    for dev in sorted(glob.glob('/dev/video*')):
         try:
             fd = os.open(dev, os.O_RDWR)
             cap = fcntl.ioctl(fd, VIDIOC_QUERYCAP, b'\x00' * 104)
@@ -68,39 +130,15 @@ def query_control(fd, cid):
     try:
         res = fcntl.ioctl(fd, VIDIOC_QUERYCTRL, query)
         _, qtype, name, qmin, qmax, qstep, qdef, qflags, _, _ = struct.unpack('II32siiiiIII', res)
-        if (qflags & 1) or qtype != 1:  # Disabled or not integer
+        if (qflags & 1) or qtype not in (1, 2, 3):  # 1=integer, 2=boolean, 3=menu
             return None
         name_str = name.split(b'\x00')[0].decode('latin1').strip()
         ctrl = struct.pack('Ii', cid, 0)
         res_ctrl = fcntl.ioctl(fd, VIDIOC_G_CTRL, ctrl)
         _, val = struct.unpack('Ii', res_ctrl)
-        return {"name": name_str, "min": qmin, "max": qmax, "step": qstep, "default": qdef, "current": val}
+        return {"name": name_str, "type": qtype, "min": qmin, "max": qmax, "step": qstep, "default": qdef, "current": val}
     except OSError:
         return None
-
-def query_all_controls(fd):
-    """Enumerate all supported controls for the camera."""
-    controls = []
-    seen = set()
-    # 1. Preferred controls first
-    for cid, name, rec in PREFERRED_ORDER:
-        info = query_control(fd, cid)
-        if info:
-            info["cid"] = cid
-            info["recommended"] = rec
-            controls.append(info)
-            seen.add(cid)
-    # 2. Any additional standard controls
-    for cid in range(0x00980900, 0x00980930):
-        if cid in seen:
-            continue
-        info = query_control(fd, cid)
-        if info:
-            info["cid"] = cid
-            info["recommended"] = None
-            controls.append(info)
-            seen.add(cid)
-    return controls
 
 def set_control(fd, cid, val):
     data = struct.pack('Ii', cid, int(val))
@@ -126,13 +164,125 @@ wireplumber.profiles = {
 """
     with open(target, 'w') as f:
         f.write(content)
-    print(f"Created WirePlumber config: {target}")
-
     try:
         subprocess.run(["systemctl", "--user", "restart", "wireplumber", "pipewire"], check=False)
-        print("Restarted WirePlumber and PipeWire user services.")
+        return True, "WirePlumber configuration updated to bypass libcamera.\nPipeWire restarted!"
+    except Exception as e:
+        return True, f"Configuration written to {target}.\nPlease run 'systemctl --user restart wireplumber pipewire' to apply."
+
+def fix_microphone():
+    """Install 50-c310-mic.conf to lock C310 mic capture rate to 16000 Hz."""
+    conf_dir = os.path.expanduser('~/.config/wireplumber/wireplumber.conf.d')
+    os.makedirs(conf_dir, exist_ok=True)
+    target = os.path.join(conf_dir, '50-c310-mic.conf')
+
+    content = """# Generated by Camera Quick Controls
+# Fixes the Logitech C310 16kHz microphone firmware bug (locks sample rate)
+monitor.alsa.rules = [
+  {
+    matches = [
+      {
+        node.name = "~alsa_input.usb-.*046d.*"
+      }
+    ]
+    actions = {
+      update-props = {
+        audio.rate = 16000
+        audio.allowed-rates = [ 16000 ]
+      }
+    }
+  }
+]
+"""
+    with open(target, 'w') as f:
+        f.write(content)
+    try:
+        subprocess.run(["systemctl", "--user", "restart", "wireplumber", "pipewire"], check=False)
+        return True, "Microphone sample rate locked to 16000 Hz.\nPipeWire restarted!"
+    except Exception as e:
+        return True, f"Rule created at {target}.\nPlease run 'systemctl --user restart wireplumber pipewire'."
+
+def save_startup_default(dev_path):
+    """Save current camera settings to startup default file and enable autostart."""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    try:
+        fd = os.open(dev_path, os.O_RDWR)
+    except Exception as e:
+        return False, f"Failed to open device: {e}"
+
+    cids_to_save = [
+        CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS,
+        CID_GAIN, CID_WHITE_BALANCE_TEMP, CID_AUTO_WHITE_BALANCE,
+        CID_EXPOSURE_AUTO, CID_EXPOSURE_ABSOLUTE, CID_POWER_LINE_FREQ
+    ]
+    saved_state = {}
+    for cid in cids_to_save:
+        info = query_control(fd, cid)
+        if info:
+            saved_state[str(cid)] = info["current"]
+    os.close(fd)
+
+    with open(STARTUP_FILE, 'w') as f:
+        json.dump(saved_state, f, indent=2)
+
+    # Enable autostart entry
+    os.makedirs(os.path.dirname(AUTOSTART_FILE), exist_ok=True)
+    autostart_content = """[Desktop Entry]
+Type=Application
+Name=Camera Settings Restore
+Comment=Restores saved camera settings on login
+Exec=cam-controls --restore
+Terminal=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2
+"""
+    with open(AUTOSTART_FILE, 'w') as f:
+        f.write(autostart_content)
+
+    return True, "Current settings saved as startup default.\nAutostart restore enabled!"
+
+def restore_startup_defaults():
+    """Silently apply startup defaults to all connected cameras."""
+    if not os.path.exists(STARTUP_FILE):
+        return
+    try:
+        with open(STARTUP_FILE) as f:
+            saved_state = json.load(f)
     except Exception:
-        print("Note: Please run 'systemctl --user restart wireplumber pipewire' to apply changes.")
+        return
+
+    cameras = list_capture_cameras()
+    for cam in cameras:
+        try:
+            fd = os.open(cam["device"], os.O_RDWR)
+            for cid_str, val in saved_state.items():
+                set_control(fd, int(cid_str), val)
+            os.close(fd)
+        except OSError:
+            pass
+
+def load_user_profiles():
+    if os.path.exists(PROFILES_FILE):
+        try:
+            with open(PROFILES_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_user_profile(name, values):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    profiles = load_user_profiles()
+    profiles[name] = {str(k): v for k, v in values.items()}
+    with open(PROFILES_FILE, 'w') as f:
+        json.dump(profiles, f, indent=2)
+
+def delete_user_profile(name):
+    profiles = load_user_profiles()
+    if name in profiles:
+        del profiles[name]
+        with open(PROFILES_FILE, 'w') as f:
+            json.dump(profiles, f, indent=2)
 
 def print_status(dev_path):
     try:
@@ -143,44 +293,18 @@ def print_status(dev_path):
 
     print(f"Camera Device: {dev_path} ({os.path.realpath(dev_path)})")
     print("-" * 65)
-    for c in query_all_controls(fd):
-        print(f"{c['name']:25}: Current={c['current']:<5} (Min={c['min']}, Max={c['max']}, Default={c['default']})")
+    for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS,
+                CID_WHITE_BALANCE_TEMP, CID_AUTO_WHITE_BALANCE, CID_GAIN,
+                CID_EXPOSURE_AUTO, CID_EXPOSURE_ABSOLUTE, CID_POWER_LINE_FREQ]:
+        info = query_control(fd, cid)
+        if info:
+            print(f"{info['name']:25}: Current={info['current']:<5} (Min={info['min']}, Max={info['max']}, Default={info['default']})")
     os.close(fd)
-
-def apply_recommended_cli(dev_path):
-    try:
-        fd = os.open(dev_path, os.O_RDWR)
-    except Exception as e:
-        print(f"Failed to open {dev_path}: {e}")
-        return
-
-    print(f"Applying recommended settings to {dev_path}...")
-    for c in query_all_controls(fd):
-        if c.get("recommended") is not None:
-            val = c["recommended"]
-            set_control(fd, c["cid"], val)
-            print(f"  {c['name']:25} -> {val:<5} [OK]")
-    os.close(fd)
-    print("Done! Recommended profile applied.")
-
-def reset_defaults_cli(dev_path):
-    try:
-        fd = os.open(dev_path, os.O_RDWR)
-    except Exception as e:
-        print(f"Failed to open {dev_path}: {e}")
-        return
-
-    print(f"Resetting {dev_path} to hardware defaults...")
-    for c in query_all_controls(fd):
-        set_control(fd, c["cid"], c["default"])
-        print(f"  {c['name']:25} -> {c['default']:<5} [OK]")
-    os.close(fd)
-    print("Done! Defaults restored.")
 
 def run_gui(initial_dev=None):
     try:
         import tkinter as tk
-        from tkinter import ttk, messagebox
+        from tkinter import ttk, messagebox, simpledialog
     except ImportError:
         sys.stderr.write("Error: python3-tkinter is required for the GUI.\n")
         sys.exit(1)
@@ -189,50 +313,93 @@ def run_gui(initial_dev=None):
         def __init__(self, root):
             self.root = root
             self.root.title("Camera Settings & Quick Controls")
-            self.root.geometry("490x510")
-            self.root.minsize(450, 480)
+            self.root.geometry("520x650")
+            self.root.minsize(480, 580)
+
             try:
                 self.icon = tk.PhotoImage(data=ICON_PNG_B64)
                 self.root.iconphoto(True, self.icon)
             except Exception:
                 pass
-            
+
             self.fd = None
             self.current_dev = None
             self.slider_vars = {}
-            self.controls = []
+            self.check_vars = {}
+            self.user_profiles = load_user_profiles()
 
             self.main_frame = ttk.Frame(root, padding=15)
             self.main_frame.pack(fill="both", expand=True)
 
-            # Camera selection dropdown
+            # Row 1: Camera Selector
             top_bar = ttk.Frame(self.main_frame)
-            top_bar.pack(fill="x", pady=(0, 10))
-
-            ttk.Label(top_bar, text="Camera:", font=("sans-serif", 10, "bold")).pack(side="left", padx=(0, 6))
-
+            top_bar.pack(fill="x", pady=(0, 8))
+            ttk.Label(top_bar, text="Camera:", font=("sans-serif", 9, "bold"), width=9).pack(side="left")
             self.cam_combo = ttk.Combobox(top_bar, state="readonly")
-            self.cam_combo.pack(side="left", fill="x", expand=True)
+            self.cam_combo.pack(side="left", fill="x", expand=True, padx=4)
             self.cam_combo.bind("<<ComboboxSelected>>", self.on_camera_switch)
+            ttk.Button(top_bar, text="↻", width=3, command=self.reload_cameras).pack(side="right")
 
-            ttk.Button(top_bar, text="↻", width=3, command=self.reload_cameras).pack(side="right", padx=(6, 0))
+            # Row 2: Preset Selector
+            preset_bar = ttk.Frame(self.main_frame)
+            preset_bar.pack(fill="x", pady=(0, 10))
+            ttk.Label(preset_bar, text="Profile:", font=("sans-serif", 9, "bold"), width=9).pack(side="left")
+            self.preset_combo = ttk.Combobox(preset_bar, state="readonly")
+            self.preset_combo.pack(side="left", fill="x", expand=True, padx=4)
+            self.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_select)
+            ttk.Button(preset_bar, text="Save As...", command=self.save_custom_preset).pack(side="right", padx=(2, 0))
+            ttk.Button(preset_bar, text="Del", width=4, command=self.delete_custom_preset).pack(side="right")
+
+            # Row 3: Quick Toggles (Auto WB, Auto Exposure, Anti-Flicker)
+            toggles_box = ttk.LabelFrame(self.main_frame, text="Smart Adjustments & Lighting", padding=10)
+            toggles_box.pack(fill="x", pady=(0, 8))
+
+            t_left = ttk.Frame(toggles_box)
+            t_left.pack(side="left", fill="x", expand=True)
+
+            self.auto_wb_var = tk.BooleanVar(value=True)
+            self.chk_auto_wb = ttk.Checkbutton(t_left, text="Auto White Balance", variable=self.auto_wb_var, command=self.toggle_auto_wb)
+            self.chk_auto_wb.pack(anchor="w", pady=2)
+
+            self.auto_exp_var = tk.BooleanVar(value=True)
+            self.chk_auto_exp = ttk.Checkbutton(t_left, text="Auto Exposure", variable=self.auto_exp_var, command=self.toggle_auto_exp)
+            self.chk_auto_exp.pack(anchor="w", pady=2)
+
+            t_right = ttk.Frame(toggles_box)
+            t_right.pack(side="right", fill="y")
+            ttk.Label(t_right, text="Anti-Flicker:").pack(anchor="w")
+            self.flicker_combo = ttk.Combobox(t_right, state="readonly", width=14, values=["Disabled", "50 Hz (EU/Asia)", "60 Hz (Americas)"])
+            self.flicker_combo.pack(anchor="w", pady=2)
+            self.flicker_combo.bind("<<ComboboxSelected>>", self.on_flicker_select)
 
             # Sliders Container Frame
-            self.sliders_frame = ttk.Frame(self.main_frame)
-            self.sliders_frame.pack(fill="both", expand=True, pady=5)
+            sliders_box = ttk.LabelFrame(self.main_frame, text="Manual Image Controls", padding=10)
+            sliders_box.pack(fill="both", expand=True, pady=4)
+            self.sliders_frame = ttk.Frame(sliders_box)
+            self.sliders_frame.pack(fill="both", expand=True)
 
-            # Buttons
-            btn_frame = ttk.Frame(self.main_frame)
-            btn_frame.pack(fill="x", pady=(15, 0))
+            # Row: Default Actions
+            act_bar = ttk.Frame(self.main_frame)
+            act_bar.pack(fill="x", pady=(8, 4))
+            ttk.Button(act_bar, text="Reset Defaults", command=self.reset_defaults).pack(side="left")
+            ttk.Button(act_bar, text="★ Save as Default", command=self.save_as_default).pack(side="left", padx=8)
+            ttk.Button(act_bar, text="Apply Recommended", command=self.apply_recommended).pack(side="right")
 
-            ttk.Button(btn_frame, text="Reset to Defaults", command=self.reset_defaults).pack(side="left")
-            ttk.Button(btn_frame, text="Apply Recommended", command=self.apply_recommended).pack(side="right")
+            # Row: One-Click Linux System Fixes
+            fixes_box = ttk.LabelFrame(self.main_frame, text="One-Click System Fixes", padding=8)
+            fixes_box.pack(fill="x", pady=(6, 0))
+            ttk.Button(fixes_box, text="🛡️ Fix Garbled / Green Video (PipeWire)", command=self.do_fix_pipewire).pack(fill="x", pady=2)
+            ttk.Button(fixes_box, text="🎙️ Fix Robotic / Fast Microphone Audio (16kHz)", command=self.do_fix_microphone).pack(fill="x", pady=2)
 
-            fix_frame = ttk.Frame(self.main_frame)
-            fix_frame.pack(fill="x", pady=(10, 0))
-            ttk.Button(fix_frame, text="Fix Garbled/Green Video (PipeWire)", command=self.do_fix_pipewire).pack(fill="x")
-
+            self.update_preset_list()
             self.reload_cameras(initial_dev)
+
+        def update_preset_list(self):
+            builtins = list(BUILTIN_PRESETS.keys())
+            customs = [f"★ {k}" for k in self.user_profiles.keys()]
+            all_presets = builtins + customs
+            self.preset_combo['values'] = all_presets
+            self.preset_combo.current(0)
 
         def reload_cameras(self, target_dev=None):
             self.cameras = list_capture_cameras()
@@ -243,7 +410,6 @@ def run_gui(initial_dev=None):
             labels = [f"{c['name']}  ({c['device']})" for c in self.cameras]
             self.cam_combo['values'] = labels
 
-            # Pick target, or current, or first
             idx = 0
             if target_dev:
                 for i, c in enumerate(self.cameras):
@@ -261,7 +427,7 @@ def run_gui(initial_dev=None):
 
         def on_camera_switch(self, event=None):
             idx = self.cam_combo.current()
-            if idx >= 0 and idx < len(self.cameras):
+            if 0 <= idx < len(self.cameras):
                 self.load_camera(self.cameras[idx]["device"])
 
         def load_camera(self, dev_path):
@@ -282,30 +448,73 @@ def run_gui(initial_dev=None):
                 ttk.Label(self.sliders_frame, text=f"Could not open {dev_path}:\n{e}", foreground="red").pack(pady=20)
                 return
 
-            self.controls = query_all_controls(self.fd)
+            # Read auto-adjustments
+            awb_info = query_control(self.fd, CID_AUTO_WHITE_BALANCE)
+            if awb_info:
+                self.auto_wb_var.set(bool(awb_info["current"]))
+                self.chk_auto_wb.state(["!disabled"])
+            else:
+                self.chk_auto_wb.state(["disabled"])
+
+            aexp_info = query_control(self.fd, CID_EXPOSURE_AUTO)
+            if aexp_info:
+                self.auto_exp_var.set(aexp_info["current"] == 3)
+                self.chk_auto_exp.state(["!disabled"])
+            else:
+                self.chk_auto_exp.state(["disabled"])
+
+            freq_info = query_control(self.fd, CID_POWER_LINE_FREQ)
+            if freq_info:
+                self.flicker_combo.current(min(freq_info["current"], 2))
+                self.flicker_combo.state(["!disabled"])
+            else:
+                self.flicker_combo.state(["disabled"])
+
+            # Setup main sliders
             self.slider_vars = {}
+            main_cids = [
+                (CID_SATURATION, "Saturation"),
+                (CID_CONTRAST, "Contrast"),
+                (CID_BRIGHTNESS, "Brightness"),
+                (CID_SHARPNESS, "Sharpness"),
+                (CID_WHITE_BALANCE_TEMP, "White Balance"),
+                (CID_EXPOSURE_ABSOLUTE, "Exposure Time"),
+                (CID_GAIN, "Gain"),
+            ]
 
-            if not self.controls:
-                ttk.Label(self.sliders_frame, text="No adjustable image controls found for this camera.", foreground="gray").pack(pady=20)
-                return
+            for cid, label in main_cids:
+                info = query_control(self.fd, cid)
+                if not info:
+                    continue
 
-            for c in self.controls:
-                cid = c["cid"]
                 row = ttk.Frame(self.sliders_frame)
-                row.pack(fill="x", pady=4)
+                row.pack(fill="x", pady=3)
 
-                lbl = ttk.Label(row, text=f"{c['name']}:", width=22, anchor="w")
+                lbl = ttk.Label(row, text=f"{label}:", width=18, anchor="w")
                 lbl.pack(side="left")
 
-                val_lbl = ttk.Label(row, text=str(c["current"]), width=6, anchor="e")
+                val_lbl = ttk.Label(row, text=str(info["current"]), width=6, anchor="e")
                 val_lbl.pack(side="right")
 
                 scale = ttk.Scale(
-                    row, from_=c["min"], to=c["max"], value=c["current"],
-                    command=lambda val, cid=cid, vl=val_lbl: self.on_slider(cid, val, vl)
+                    row, from_=info["min"], to=info["max"], value=info["current"],
+                    command=lambda val, c=cid, vl=val_lbl: self.on_slider(c, val, vl)
                 )
                 scale.pack(side="left", fill="x", expand=True, padx=8)
                 self.slider_vars[cid] = (scale, val_lbl)
+
+            self.update_slider_states()
+
+        def update_slider_states(self):
+            # Disable WB slider if Auto WB is active
+            if CID_WHITE_BALANCE_TEMP in self.slider_vars:
+                scale, _ = self.slider_vars[CID_WHITE_BALANCE_TEMP]
+                scale.state(["disabled" if self.auto_wb_var.get() else "!disabled"])
+
+            # Disable Exposure slider if Auto Exposure is active
+            if CID_EXPOSURE_ABSOLUTE in self.slider_vars:
+                scale, _ = self.slider_vars[CID_EXPOSURE_ABSOLUTE]
+                scale.state(["disabled" if self.auto_exp_var.get() else "!disabled"])
 
         def on_slider(self, cid, val, label):
             val_int = int(float(val))
@@ -313,38 +522,126 @@ def run_gui(initial_dev=None):
             if self.fd is not None:
                 set_control(self.fd, cid, val_int)
 
-        def apply_recommended(self):
+        def toggle_auto_wb(self):
+            if self.fd is not None:
+                set_control(self.fd, CID_AUTO_WHITE_BALANCE, 1 if self.auto_wb_var.get() else 0)
+                self.update_slider_states()
+
+        def toggle_auto_exp(self):
+            if self.fd is not None:
+                # 3 = Auto (Aperture Priority), 1 = Manual
+                set_control(self.fd, CID_EXPOSURE_AUTO, 3 if self.auto_exp_var.get() else 1)
+                self.update_slider_states()
+
+        def on_flicker_select(self, event=None):
+            if self.fd is not None:
+                set_control(self.fd, CID_POWER_LINE_FREQ, self.flicker_combo.current())
+
+        def apply_values_dict(self, values_dict):
             if self.fd is None:
                 return
-            for c in self.controls:
-                cid = c["cid"]
-                if c.get("recommended") is not None:
-                    val = c["recommended"]
+            for cid_key, val in values_dict.items():
+                cid = int(cid_key)
+                set_control(self.fd, cid, val)
+                if cid in self.slider_vars:
+                    scale, lbl = self.slider_vars[cid]
+                    scale.set(val)
+                    lbl.config(text=str(val))
+                elif cid == CID_AUTO_WHITE_BALANCE:
+                    self.auto_wb_var.set(bool(val))
+                elif cid == CID_EXPOSURE_AUTO:
+                    self.auto_exp_var.set(val == 3)
+                elif cid == CID_POWER_LINE_FREQ:
+                    self.flicker_combo.current(min(val, 2))
+            self.update_slider_states()
+
+        def on_preset_select(self, event=None):
+            name = self.preset_combo.get()
+            if name in BUILTIN_PRESETS:
+                self.apply_values_dict(BUILTIN_PRESETS[name])
+            elif name.startswith("★ "):
+                clean_name = name[2:]
+                if clean_name in self.user_profiles:
+                    self.apply_values_dict(self.user_profiles[clean_name])
+
+        def save_custom_preset(self):
+            from tkinter import simpledialog, messagebox
+            name = simpledialog.askstring("Save Preset", "Enter a name for this preset:")
+            if name:
+                cur_values = {}
+                for cid in self.slider_vars:
+                    cur_values[cid] = int(float(self.slider_vars[cid][0].get()))
+                cur_values[CID_AUTO_WHITE_BALANCE] = 1 if self.auto_wb_var.get() else 0
+                cur_values[CID_EXPOSURE_AUTO] = 3 if self.auto_exp_var.get() else 1
+                cur_values[CID_POWER_LINE_FREQ] = self.flicker_combo.current()
+
+                save_user_profile(name, cur_values)
+                self.user_profiles = load_user_profiles()
+                self.update_preset_list()
+                self.preset_combo.set(f"★ {name}")
+                messagebox.showinfo("Preset Saved", f"Preset '{name}' saved successfully!")
+
+        def delete_custom_preset(self):
+            name = self.preset_combo.get()
+            if not name.startswith("★ "):
+                from tkinter import messagebox
+                messagebox.showwarning("Cannot Delete", "Built-in presets cannot be deleted.")
+                return
+            clean_name = name[2:]
+            delete_user_profile(clean_name)
+            self.user_profiles = load_user_profiles()
+            self.update_preset_list()
+
+        def apply_recommended(self):
+            self.apply_values_dict(BUILTIN_PRESETS["Recommended (Vivid)"])
+            self.preset_combo.set("Recommended (Vivid)")
+
+        def reset_defaults(self):
+            if self.fd is None:
+                return
+            for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS,
+                        CID_GAIN, CID_WHITE_BALANCE_TEMP, CID_AUTO_WHITE_BALANCE,
+                        CID_EXPOSURE_AUTO, CID_EXPOSURE_ABSOLUTE, CID_POWER_LINE_FREQ]:
+                info = query_control(self.fd, cid)
+                if info:
+                    val = info["default"]
                     set_control(self.fd, cid, val)
                     if cid in self.slider_vars:
                         scale, lbl = self.slider_vars[cid]
                         scale.set(val)
                         lbl.config(text=str(val))
+                    elif cid == CID_AUTO_WHITE_BALANCE:
+                        self.auto_wb_var.set(bool(val))
+                    elif cid == CID_EXPOSURE_AUTO:
+                        self.auto_exp_var.set(val == 3)
+                    elif cid == CID_POWER_LINE_FREQ:
+                        self.flicker_combo.current(min(val, 2))
+            self.update_slider_states()
 
-        def reset_defaults(self):
-            if self.fd is None:
+        def save_as_default(self):
+            from tkinter import messagebox
+            if not self.current_dev:
                 return
-            for c in self.controls:
-                cid = c["cid"]
-                set_control(self.fd, cid, c["default"])
-                if cid in self.slider_vars:
-                    scale, lbl = self.slider_vars[cid]
-                    scale.set(c["default"])
-                    lbl.config(text=str(c["default"]))
+            ok, msg = save_startup_default(self.current_dev)
+            if ok:
+                messagebox.showinfo("Saved as Startup Default", msg)
+            else:
+                messagebox.showerror("Error", msg)
 
         def do_fix_pipewire(self):
-            fix_pipewire()
-            messagebox.showinfo("PipeWire Fix Applied", "WirePlumber configuration has been updated to bypass libcamera.\nPipeWire services restarted!")
+            from tkinter import messagebox
+            ok, msg = fix_pipewire()
+            messagebox.showinfo("PipeWire Video Fix", msg)
+
+        def do_fix_microphone(self):
+            from tkinter import messagebox
+            ok, msg = fix_microphone()
+            messagebox.showinfo("PipeWire Microphone Fix", msg)
 
         def show_no_camera_error(self):
             for widget in self.sliders_frame.winfo_children():
                 widget.destroy()
-            ttk.Label(self.sliders_frame, text="No camera capture devices detected.\nPlease check your USB connection.", foreground="red").pack(pady=20)
+            ttk.Label(self.sliders_frame, text="No camera devices detected.\nPlease check your USB connection.", foreground="red").pack(pady=20)
 
     root = tk.Tk()
     app = CamApp(root)
@@ -357,14 +654,27 @@ def main():
     parser.add_argument("--status", action="store_true", help="Print current camera control values")
     parser.add_argument("--apply-recommended", action="store_true", help="Apply recommended settings")
     parser.add_argument("--reset-defaults", action="store_true", help="Reset controls to hardware defaults")
-    parser.add_argument("--fix-pipewire", action="store_true", help="Apply WirePlumber fix to eliminate garbled/green video on PipeWire")
+    parser.add_argument("--save-default", action="store_true", help="Save current settings as startup default")
+    parser.add_argument("--restore", action="store_true", help="Silently restore saved startup defaults (used on login)")
+    parser.add_argument("--fix-pipewire", action="store_true", help="Fix garbled/green video by bypassing libcamera")
+    parser.add_argument("--fix-mic", action="store_true", help="Fix robotic/fast microphone audio by locking 16kHz")
     parser.add_argument("--gui", action="store_true", help="Launch GUI control panel (default if no flags given)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
 
     args = parser.parse_args()
 
+    if args.restore:
+        restore_startup_defaults()
+        return
+
     if args.fix_pipewire:
-        fix_pipewire()
+        ok, msg = fix_pipewire()
+        print(msg)
+        return
+
+    if args.fix_mic:
+        ok, msg = fix_microphone()
+        print(msg)
         return
 
     cams = list_capture_cameras()
@@ -396,16 +706,37 @@ def main():
     else:
         dev = cams[0]["device"] if cams else "/dev/video0"
 
+    if args.save_default:
+        ok, msg = save_startup_default(dev)
+        print(msg)
+        return
+
     if args.status:
         print_status(dev)
         return
 
     if args.apply_recommended:
-        apply_recommended_cli(dev)
+        try:
+            fd = os.open(dev, os.O_RDWR)
+            for cid, val in BUILTIN_PRESETS["Recommended (Vivid)"].items():
+                set_control(fd, cid, val)
+            os.close(fd)
+            print(f"Recommended profile applied to {dev}!")
+        except Exception as e:
+            print(f"Error: {e}")
         return
 
     if args.reset_defaults:
-        reset_defaults_cli(dev)
+        try:
+            fd = os.open(dev, os.O_RDWR)
+            for cid in [CID_SATURATION, CID_CONTRAST, CID_BRIGHTNESS, CID_SHARPNESS, CID_GAIN]:
+                info = query_control(fd, cid)
+                if info:
+                    set_control(fd, cid, info["default"])
+            os.close(fd)
+            print(f"Defaults restored on {dev}!")
+        except Exception as e:
+            print(f"Error: {e}")
         return
 
     # Default to GUI

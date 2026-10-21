@@ -2,7 +2,7 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="1.1.1"
+VERSION="1.2.0"
 PKG_NAME="cam-controls"
 BUILD_DIR="$DIR/build/deb"
 OUTPUT_DIR="$DIR/dist"

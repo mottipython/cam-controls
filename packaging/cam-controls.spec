@@ -1,5 +1,5 @@
 Name:           cam-controls
-Version:        1.1.1
+Version:        1.2.0
 Release:        1%{?dist}
 Summary:        Camera Quick Controls & PipeWire video fix for Linux webcams
 License:        MIT
@@ -46,5 +46,5 @@ install -m 644 %{_sourcedir}/data/99-disable-libcamera.conf %{buildroot}%{_datad
 %{_datadir}/cam-controls/99-disable-libcamera.conf
 
 %changelog
-* Tue Oct 20 2026 Motti Schleider <motti.schleider@gmail.com> - 1.1.1-1
-- Modern webcam icon and embedded titlebar icon
+* Tue Oct 20 2026 Motti Schleider <motti.schleider@gmail.com> - 1.2.0-1
+- Added presets, startup persistence, anti-flicker, auto-exposure/WB toggles, and C310 mic fix
