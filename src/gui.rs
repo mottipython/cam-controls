@@ -493,13 +493,34 @@ impl eframe::App for CamApp {
     }
 }
 
+fn load_app_icon() -> Option<egui::IconData> {
+    let icon_bytes = include_bytes!("../data/icons/hicolor/48x48/apps/cam-controls.png");
+    if let Ok(img) = image::load_from_memory(icon_bytes) {
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        Some(egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        })
+    } else {
+        None
+    }
+}
+
 pub fn run_gui(initial_dev: Option<String>) -> Result<(), eframe::Error> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("Camera Settings & Quick Controls")
+        .with_inner_size([520.0, 680.0])
+        .with_min_inner_size([460.0, 560.0])
+        .with_app_id("cam-controls");
+
+    if let Some(icon) = load_app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Camera Settings & Quick Controls")
-            .with_inner_size([520.0, 680.0])
-            .with_min_inner_size([460.0, 560.0])
-            .with_app_id("cam-controls"),
+        viewport,
         ..Default::default()
     };
 
