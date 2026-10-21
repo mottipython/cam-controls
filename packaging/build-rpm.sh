@@ -21,6 +21,7 @@ rpmbuild -bb \
   --define "_topdir $RPMBUILD_DIR" \
   --define "_tmppath /tmp" \
   --define "_sourcedir $DIR" \
+  --nodeps \
   "$RPMBUILD_DIR/SPECS/cam-controls.spec"
 
 find "$RPMBUILD_DIR/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;

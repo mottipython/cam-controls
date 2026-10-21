@@ -5,11 +5,6 @@ Summary:        High-performance camera image tuning & PipeWire fix for Linux
 License:        MIT
 URL:            https://github.com/mottipython/cam-controls
 
-BuildRequires:  rust
-BuildRequires:  cargo
-BuildRequires:  libxkbcommon-devel
-BuildRequires:  fontconfig-devel
-
 %description
 Camera Quick Controls (Rust Edition) is a high-performance, native Linux
 camera control utility and PipeWire fix. Features instant V4L2 ioctl control,
