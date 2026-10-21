@@ -18,7 +18,7 @@ import threading
 import queue
 import time
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 # Embedded 48x48 webcam icon (avoids generic X icon)
 ICON_PNG_B64 = """iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAACXBI
@@ -370,7 +370,7 @@ def run_gui(initial_dev=None):
 
             try:
                 self.icon = tk.PhotoImage(data=ICON_PNG_B64)
-                self.root.iconphoto(True, self.icon)
+                self.root.tk.call('wm', 'iconphoto', self.root._w, '-default', self.icon)
             except Exception:
                 pass
 
@@ -684,7 +684,7 @@ def run_gui(initial_dev=None):
                 widget.destroy()
             ttk.Label(self.sliders_frame, text="No camera devices detected.\nPlease check your USB connection.", foreground="red").pack(pady=20)
 
-    root = tk.Tk()
+    root = tk.Tk(className="cam-controls")
     app = CamApp(root)
     root.mainloop()
 

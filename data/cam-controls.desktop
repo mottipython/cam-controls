@@ -6,6 +6,7 @@ Exec=cam-controls
 Icon=cam-controls
 Terminal=false
 Type=Application
+StartupWMClass=cam-controls
 Categories=Settings;HardwareSettings;AudioVideo;Video;
 Keywords=camera;webcam;video;v4l2;pipewire;logitech;controls;color;settings;hardware;saturation;contrast;brightness;
 StartupNotify=true
