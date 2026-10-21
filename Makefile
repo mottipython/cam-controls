@@ -15,12 +15,19 @@ install:
 	install -m 755 bin/cam-controls $(DESTDIR)$(PREFIX)/bin/cam-controls
 	install -m 644 data/cam-controls.desktop $(DESTDIR)$(PREFIX)/share/applications/cam-controls.desktop
 	install -m 644 data/icons/hicolor/scalable/apps/cam-controls.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/cam-controls.svg
+	for size in 16 24 32 48 64 128 256; do \
+		install -d $(DESTDIR)$(PREFIX)/share/icons/hicolor/$${size}x$${size}/apps; \
+		install -m 644 data/icons/hicolor/$${size}x$${size}/apps/cam-controls.png $(DESTDIR)$(PREFIX)/share/icons/hicolor/$${size}x$${size}/apps/cam-controls.png; \
+	done
 	install -m 644 data/99-disable-libcamera.conf $(DESTDIR)$(PREFIX)/share/cam-controls/99-disable-libcamera.conf
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/cam-controls
 	rm -f $(DESTDIR)$(PREFIX)/share/applications/cam-controls.desktop
 	rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/cam-controls.svg
+	for size in 16 24 32 48 64 128 256; do \
+		rm -f $(DESTDIR)$(PREFIX)/share/icons/hicolor/$${size}x$${size}/apps/cam-controls.png; \
+	done
 	rm -rf $(DESTDIR)$(PREFIX)/share/cam-controls
 
 deb:

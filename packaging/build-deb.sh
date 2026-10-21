@@ -2,7 +2,7 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="1.1.0"
+VERSION="1.1.1"
 PKG_NAME="cam-controls"
 BUILD_DIR="$DIR/build/deb"
 OUTPUT_DIR="$DIR/dist"
@@ -12,6 +12,9 @@ mkdir -p "$BUILD_DIR/DEBIAN"
 mkdir -p "$BUILD_DIR/usr/bin"
 mkdir -p "$BUILD_DIR/usr/share/applications"
 mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps"
+for size in 16 24 32 48 64 128 256; do
+    mkdir -p "$BUILD_DIR/usr/share/icons/hicolor/${size}x${size}/apps"
+done
 mkdir -p "$BUILD_DIR/usr/share/cam-controls"
 mkdir -p "$OUTPUT_DIR"
 
@@ -19,6 +22,9 @@ mkdir -p "$OUTPUT_DIR"
 install -m 755 "$DIR/bin/cam-controls" "$BUILD_DIR/usr/bin/cam-controls"
 install -m 644 "$DIR/data/cam-controls.desktop" "$BUILD_DIR/usr/share/applications/cam-controls.desktop"
 install -m 644 "$DIR/data/icons/hicolor/scalable/apps/cam-controls.svg" "$BUILD_DIR/usr/share/icons/hicolor/scalable/apps/cam-controls.svg"
+for size in 16 24 32 48 64 128 256; do
+    install -m 644 "$DIR/data/icons/hicolor/${size}x${size}/apps/cam-controls.png" "$BUILD_DIR/usr/share/icons/hicolor/${size}x${size}/apps/cam-controls.png"
+done
 install -m 644 "$DIR/data/99-disable-libcamera.conf" "$BUILD_DIR/usr/share/cam-controls/99-disable-libcamera.conf"
 
 # Generate control file

@@ -1,36 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6"/>
-      <stop offset="100%" stop-color="#1d4ed8"/>
+    <!-- Gradients -->
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334155"/>
+      <stop offset="30%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
     </linearGradient>
-    <linearGradient id="lensGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#334155"/>
+
+    <linearGradient id="faceGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#020617"/>
     </linearGradient>
-    <linearGradient id="glareGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.8"/>
-      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.1"/>
+
+    <linearGradient id="standGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#475569"/>
+      <stop offset="100%" stop-color="#1e293b"/>
     </linearGradient>
+
+    <linearGradient id="lensRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#64748b"/>
+      <stop offset="50%" stop-color="#334155"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+
+    <radialGradient id="lensOptics" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="35%" stop-color="#0284c7"/>
+      <stop offset="70%" stop-color="#0369a1"/>
+      <stop offset="100%" stop-color="#082f49"/>
+    </radialGradient>
+
+    <radialGradient id="pupil" cx="40%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#0c4a6e"/>
+      <stop offset="50%" stop-color="#031c30"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+
+    <radialGradient id="glowLed" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#86efac"/>
+      <stop offset="60%" stop-color="#22c55e"/>
+      <stop offset="100%" stop-color="#15803d"/>
+    </radialGradient>
   </defs>
+
+  <!-- Ambient Vector Shadow -->
+  <ellipse cx="128" cy="226" rx="60" ry="12" fill="#000000" opacity="0.35"/>
+  <ellipse cx="128" cy="158" rx="85" ry="16" fill="#000000" opacity="0.25"/>
+
+  <!-- Stand / Monitor Mount Base -->
+  <path d="M 96 150 L 160 150 L 175 210 Q 176 216 170 216 L 86 216 Q 80 216 81 210 Z" fill="url(#standGrad)"/>
+  <ellipse cx="128" cy="216" rx="46" ry="7" fill="#0f172a"/>
+  <!-- Stand Hinge Pivot -->
+  <rect x="114" y="142" width="28" height="18" rx="5" fill="#64748b"/>
+
+  <!-- Main Webcam Curved Body (Logitech Pill Shape) -->
+  <rect x="24" y="44" width="208" height="106" rx="53" fill="url(#bodyGrad)" stroke="#475569" stroke-width="2"/>
   
-  <!-- Outer Rounded Body -->
-  <rect x="14" y="24" width="100" height="80" rx="22" fill="url(#bgGrad)" filter="drop-shadow(0px 8px 12px rgba(0,0,0,0.3))"/>
-  
-  <!-- Top button -->
-  <rect x="36" y="16" width="22" height="10" rx="4" fill="#60a5fa"/>
-  
-  <!-- Outer Lens Ring -->
-  <circle cx="64" cy="64" r="30" fill="#1e293b"/>
-  <circle cx="64" cy="64" r="25" fill="url(#lensGrad)"/>
-  <circle cx="64" cy="64" r="18" fill="#0284c7"/>
-  <circle cx="64" cy="64" r="10" fill="#082f49"/>
-  <circle cx="60" cy="60" r="4" fill="url(#glareGrad)"/>
-  
-  <!-- Sliders indicator pill at bottom right -->
-  <circle cx="96" cy="38" r="4" fill="#22c55e"/>
-  
-  <!-- Sliders mini accent -->
-  <rect x="84" y="80" width="20" height="4" rx="2" fill="#93c5fd"/>
-  <circle cx="96" cy="82" r="4" fill="#ffffff"/>
+  <!-- Glossy Front Faceplate -->
+  <rect x="36" y="54" width="184" height="86" rx="43" fill="url(#faceGrad)" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Microphone Grilles (Left and Right) -->
+  <g fill="#475569" opacity="0.7">
+    <circle cx="56" cy="94" r="2.5"/>
+    <circle cx="56" cy="102" r="2.5"/>
+    <circle cx="64" cy="98" r="2.5"/>
+  </g>
+
+  <!-- Active Power/Status LED (Green Glow) -->
+  <circle cx="196" cy="97" r="7" fill="#22c55e" opacity="0.3"/>
+  <circle cx="196" cy="97" r="4.5" fill="url(#glowLed)"/>
+  <circle cx="195" cy="96" r="1.5" fill="#ffffff" opacity="0.8"/>
+
+  <!-- Center Camera Lens Assembly -->
+  <!-- Outer Metallic Bezel -->
+  <circle cx="128" cy="97" r="44" fill="url(#lensRing)"/>
+  <circle cx="128" cy="97" r="41" fill="#0f172a"/>
+
+  <!-- Stepped Ridge Rings -->
+  <circle cx="128" cy="97" r="37" fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+  <circle cx="128" cy="97" r="31" fill="#0f172a"/>
+
+  <!-- Deep Blue Coated Glass Element -->
+  <circle cx="128" cy="97" r="28" fill="url(#lensOptics)"/>
+
+  <!-- Sensor Core / Pupil -->
+  <circle cx="128" cy="97" r="16" fill="url(#pupil)"/>
+
+  <!-- Lens Glare Reflections (Curved Optics Highlight) -->
+  <path d="M 112 76 A 22 22 0 0 1 144 76 A 20 20 0 0 0 114 86 Z" fill="#ffffff" opacity="0.75"/>
+  <ellipse cx="140" cy="114" rx="6" ry="3" transform="rotate(-30 140 114)" fill="#38bdf8" opacity="0.6"/>
+
+  <!-- Tuning / Sliders Badge Overlay (Bottom Right) -->
+  <g transform="translate(156, 150)">
+    <!-- Shadow -->
+    <rect x="2" y="4" width="76" height="54" rx="14" fill="#000000" opacity="0.4"/>
+    <!-- Badge pill -->
+    <rect x="0" y="0" width="76" height="54" rx="14" fill="#0f172a" stroke="#38bdf8" stroke-width="2.5"/>
+    
+    <!-- Mini Sliders -->
+    <!-- Track 1 (Red/Pink - Saturation) -->
+    <line x1="14" y1="14" x2="62" y2="14" stroke="#334155" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="14" y1="14" x2="48" y2="14" stroke="#f43f5e" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="48" cy="14" r="5.5" fill="#ffffff" stroke="#f43f5e" stroke-width="2"/>
+
+    <!-- Track 2 (Cyan/Blue - Contrast) -->
+    <line x1="14" y1="27" x2="62" y2="27" stroke="#334155" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="14" y1="27" x2="36" y2="27" stroke="#06b6d4" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="36" cy="27" r="5.5" fill="#ffffff" stroke="#06b6d4" stroke-width="2"/>
+
+    <!-- Track 3 (Amber/Yellow - Brightness) -->
+    <line x1="14" y1="40" x2="62" y2="40" stroke="#334155" stroke-width="3.5" stroke-linecap="round"/>
+    <line x1="14" y1="40" x2="54" y2="40" stroke="#eab308" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="54" cy="40" r="5.5" fill="#ffffff" stroke="#eab308" stroke-width="2"/>
+  </g>
 </svg>
